@@ -1,5 +1,6 @@
 import { Experience } from './scene/Experience'
 import { Hud } from './ui/Hud'
+import { Journey } from './ui/Journey'
 import { Loader } from './ui/Loader'
 
 export default function App() {
@@ -8,6 +9,7 @@ export default function App() {
       <Experience />
       <Hud />
       <Loader />
+      <Journey />
     </div>
   )
 }

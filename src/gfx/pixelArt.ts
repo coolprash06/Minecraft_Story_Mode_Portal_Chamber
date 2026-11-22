@@ -136,6 +136,62 @@ export function carpetTexture() {
   return t
 }
 
+/**
+ * Side runner: 16 × 16 px tile = 1 m along × 1 m across (x runs along the runner, y across it).
+ * The main carpet's palette and edging, with one small gold diamond per metre.
+ */
+export function runnerTexture() {
+  const red = hexRGB('#8a1620')
+  const redDark = hexRGB('#5e0d15')
+  const redLight = hexRGB('#a8222b')
+  const gold = hexRGB('#d7a83a')
+  const goldDark = hexRGB('#8f6a1c')
+  const c = paint(16, 16, (x, y) => {
+    const n = 0.92 + hash3(x, y, 11, 2) * 0.12
+    if (y === 0 || y === 15) return vary(goldDark, n)
+    if (y === 1 || y === 14) return vary(gold, n)
+    if (y === 2 || y === 13) return vary(redDark, n)
+    if ((y === 4 || y === 11) && x % 4 < 2) return vary(gold, n * 0.9)
+    const d = Math.abs(x - 7.5) + Math.abs(y - 7.5)
+    if (Math.abs(d - 3) < 0.6) return vary(gold, n * 0.85)
+    if (d < 1.6) return vary(redLight, n)
+    return vary(red, n)
+  })
+  return texture(c, true)
+}
+
+/** Mat in front of a portal: 14 × 48 px = 0.9 m deep (x) × 3 m wide (y). */
+export const MAT_PX = { w: 14, h: 48, border: 2 } as const
+
+/**
+ * The mat's red pile and gold trim. The outer 2 px ring is pale grey: the mat's shader tints it
+ * with the portal's colour (desaturated while the portal is dark, glowing once it is lit).
+ */
+export function matTexture() {
+  const { w, h, border } = MAT_PX
+  const red = hexRGB('#8a1620')
+  const redDark = hexRGB('#5e0d15')
+  const redLight = hexRGB('#a8222b')
+  const gold = hexRGB('#d7a83a')
+  const pale = hexRGB('#e8e8ee')
+  const c = paint(w, h, (x, y) => {
+    const n = 0.92 + hash3(x, y, 13, 2) * 0.12
+    const ring = Math.min(x, y, w - 1 - x, h - 1 - y)
+    if (ring < border) return vary(pale, ring === 0 ? n * 0.78 : n)
+    if (ring === border) return vary(redDark, n)
+    if (ring === border + 1) return vary(gold, n)
+    // centre: a long diamond with a light core, plus small studs along the axis
+    const dx = Math.abs(x - (w - 1) / 2)
+    const dy = Math.abs(y - (h - 1) / 2)
+    const d = dx + dy * 0.28
+    if (Math.abs(d - 3.2) < 0.55) return vary(gold, n * 0.88)
+    if (d < 1.7) return vary(redLight, n)
+    if (dx < 0.6 && dy > 9 && (y % 5 === 0)) return vary(gold, n * 0.8)
+    return vary(red, n)
+  })
+  return texture(c)
+}
+
 /* ───────────────────────────── item sprites ───────────────────────────── */
 
 type Palette = Record<string, { c: Col; slot: Slot }>

@@ -1,9 +1,13 @@
-/** Royal cloth: heraldic banners (gently rippling) and the carpet runner down the centre aisle. */
+/**
+ * Royal cloth: heraldic banners (gently rippling), the carpet runner down the centre aisle, and the
+ * side runners leading to every portal, each ending in a mat bordered in that portal's colour.
+ */
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import { BoxGeometry, DoubleSide, InstancedMesh, Matrix4, MeshStandardMaterial, PlaneGeometry, Quaternion, Vector3 } from 'three'
-import { withLightField } from '../gfx/lightField'
-import { bannerTexture, carpetTexture, CRESTS } from '../gfx/pixelArt'
+import { lightField, withLightField } from '../gfx/lightField'
+import { bannerTexture, carpetTexture, CRESTS, MAT_PX, matTexture, runnerTexture } from '../gfx/pixelArt'
+import { portalFx } from '../gfx/portalFx'
 import { hall } from '../world/layout'
 
 const BANNER_W = 1.45
@@ -74,4 +78,78 @@ export function Carpet() {
   }, [halfWidth, length])
   useEffect(() => () => (geo.dispose(), material.map?.dispose(), material.dispose()), [geo, material])
   return <mesh geometry={geo} material={material} position={[0, 0.025, (zStart + zEnd) / 2]} receiveShadow />
+}
+
+/**
+ * Side runners (one instanced draw) and the mats in front of the frames (another). Instance i is
+ * portal i. The mat's 2 px border takes the portal's colour: desaturated while the portal is dark,
+ * glowing softly once it is lit (it follows the light field's fade, and the hover / ignite boost).
+ */
+export function Runners() {
+  const runners = hall.decor.runners
+  const mats = hall.decor.mats
+  const runnerRef = useRef<InstancedMesh>(null)
+  const matRef = useRef<InstancedMesh>(null)
+  const { runnerGeo, runnerMat, matGeo, matMat } = useMemo(() => {
+    const r0 = runners[0]
+    const length = Math.abs(r0.xTo - r0.xFrom)
+    const map = runnerTexture()
+    map.repeat.set(length, 1)
+    // geometry runs from x = 0 to x = length, so each instance starts at its main-carpet end
+    const runnerGeo = new BoxGeometry(length, 0.04, r0.halfWidth * 2).translate(length / 2, 0.02, 0)
+    const runnerMat = withLightField(new MeshStandardMaterial({ map, roughness: 0.97 }), { key: 'runner' })
+
+    const m0 = mats[0]
+    const matGeo = new BoxGeometry(m0.depth, 0.03, m0.width).translate(0, 0.015, 0)
+    const P = lightField.portalLevels.value.length
+    const matMat = withLightField(new MeshStandardMaterial({ map: matTexture(), roughness: 0.95 }), {
+      key: 'portalMat',
+      uniforms: { uPortalLevel: lightField.portalLevels, uPortalColor: lightField.portalColors, uPortalBoost: portalFx.boost },
+      vertexHead: 'varying float vMatId;',
+      vertex: 'vMatId = float(gl_InstanceID);',
+      fragmentHead: `varying float vMatId; uniform float uPortalLevel[${P}]; uniform vec3 uPortalColor[${P}]; uniform float uPortalBoost[${P}];`,
+      fragment: /* glsl */ `
+        {
+          vec2 px = vMapUv * vec2(${MAT_PX.w.toFixed(1)}, ${MAT_PX.h.toFixed(1)});
+          float ring = min(min(px.x, px.y), min(${MAT_PX.w.toFixed(1)} - px.x, ${MAT_PX.h.toFixed(1)} - px.y));
+          if (ring < ${MAT_PX.border.toFixed(1)}) {
+            int pid = int(vMatId + 0.5);
+            float lvl = uPortalLevel[pid];
+            lvl = lvl * lvl * (3.0 - 2.0 * lvl);
+            vec3 pc = uPortalColor[pid];
+            float g = dot(pc, vec3(0.2126, 0.7152, 0.0722));
+            diffuseColor.rgb *= mix(vec3(g * 1.4), pc, 0.45 + 0.55 * lvl);
+            totalEmissiveRadiance += pc * diffuseColor.rgb * (0.12 + lvl * 1.1 + uPortalBoost[pid] * 0.5);
+          }
+        }`,
+    })
+    return { runnerGeo, runnerMat, matGeo, matMat }
+  }, [runners, mats])
+  useEffect(
+    () => () => {
+      for (const d of [runnerGeo, runnerMat.map, runnerMat, matGeo, matMat.map, matMat]) d?.dispose()
+    },
+    [runnerGeo, runnerMat, matGeo, matMat],
+  )
+  useLayoutEffect(() => {
+    const up = new Vector3(0, 1, 0)
+    const one = new Vector3(1, 1, 1)
+    const r = runnerRef.current
+    const m = matRef.current
+    if (!r || !m) return
+    for (const run of runners) {
+      const q = new Quaternion().setFromAxisAngle(up, run.side > 0 ? 0 : Math.PI)
+      r.setMatrixAt(run.portalId, new Matrix4().compose(new Vector3(run.xFrom, 0, run.z), q, one))
+    }
+    for (const mat of mats) m.setMatrixAt(mat.portalId, new Matrix4().makeTranslation(...mat.position))
+    r.instanceMatrix.needsUpdate = m.instanceMatrix.needsUpdate = true
+    r.computeBoundingSphere()
+    m.computeBoundingSphere()
+  }, [runners, mats])
+  return (
+    <group name="runners">
+      <instancedMesh ref={runnerRef} args={[runnerGeo, runnerMat, runners.length]} receiveShadow />
+      <instancedMesh ref={matRef} args={[matGeo, matMat, mats.length]} receiveShadow />
+    </group>
+  )
 }

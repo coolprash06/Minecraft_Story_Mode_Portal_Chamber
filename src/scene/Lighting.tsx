@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { BackSide, BoxGeometry, FrontSide, Color, Mesh, MeshBasicMaterial, PMREMGenerator, PointLight, Scene, Vector3 } from 'three'
 import { lightField, type LightSource } from '../gfx/lightField'
+import { OFF } from '../lib/debug'
 import { useApp } from '../state/store'
 
 /**
@@ -78,6 +79,7 @@ export function Lighting() {
         // Soul chandeliers stay field-only: soft overhead light needs no shadows, and their gold
         // takes a reduced field share (materials.ts) that a real pool light wouldn't respect.
         if (s.kind === 'chandelier') continue
+        if (s.kind === 'portal' && OFF.has('poolportals')) continue
         const e = lightField.strength(s)
         if (e < 0.05 * s.intensity) continue
         to.copy(s.pos).sub(camera.position)

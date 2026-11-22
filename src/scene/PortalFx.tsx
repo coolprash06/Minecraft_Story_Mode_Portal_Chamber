@@ -2,9 +2,14 @@
  * Effects on the interactive portals:
  *  • hover: a glowing outline round the frame, and the frame's own glow lifts (portalFx.hover);
  *  • ignite (right flint): a spark burst along the bottom of the opening, the swirl fills the
- *    opening bottom-up over ~1.5 s (portalFx.fill), a frame flash, a short camera shake and FOV
- *    pulse; the floor light pool fades in through the light field on its own (litMask);
- *  • fizzle (wrong flint): a few dull sparks dying in a puff of grey smoke.
+ *    opening bottom-up over ~1.5 s (portalFx.fill), a frame flash, a bloom kick, a short camera
+ *    shake and FOV pulse (neither with reduced motion); the floor light pool fades in through the
+ *    light field on its own (litMask);
+ *  • fizzle (wrong flint): a few dull sparks dying in a puff of grey smoke;
+ *  • extinguish (its flint returned while lit): the swirl drains top-down over ~1.2 s behind the
+ *    same ragged front, a few dying sparks and a small smoke puff at the bottom, a soft dimming
+ *    pulse (no shake). The frame glow, floor pool and mat border follow the light field's fade.
+ *    Reduced motion: the surface just fades out.
  * The particle systems are always in the scene (idle = every point culled in the vertex shader), so
  * their programs compile behind the loading veil and the first click never hitches.
  */
@@ -16,10 +21,11 @@ import { FLINTS } from '../config/items'
 import { PORTAL_COLORS } from '../config/portals'
 import { FOG_DENSITY } from '../config/theme'
 import { outlineGeometry, outlineMaterial, pointScaleFor, wallMatrix } from '../gfx/outline'
-import { cameraFx, portalFx } from '../gfx/portalFx'
+import { cameraFx, portalFx, postFx, warpFx } from '../gfx/portalFx'
+import { REDUCED_MOTION } from '../lib/device'
 import { damp } from '../lib/random'
 import { onGame } from '../state/events'
-import { appStore, isLit } from '../state/store'
+import { appStore } from '../state/store'
 import { hall } from '../world/layout'
 
 const ENABLED = FLINTS.map((f) => f.portalId)
@@ -176,32 +182,68 @@ export function PortalFx() {
       m.uniforms.uColor.value.set(color)
       m.uniforms.uAge.value = 0
     }
+    /** The running ignite / extinguish timeline per portal (a new one replaces it). */
+    const timelines = new Map<number, gsap.core.Timeline>()
     const offIgnite = onGame('ignite', ({ portalId }) => {
+      timelines.get(portalId)?.kill()
+      portalFx.fade[portalId] = 1
       aim(sparkMat, portalId, PORTAL_COLORS[hall.portals[portalId].color])
       sparkMat.uniforms.uHot.value = 1
       // the swirl climbs the opening, the frame flares, the camera takes a soft hit
       const fill = { v: portalFx.fill[portalId] }
       const flash = { v: 0 }
-      gsap
-        .timeline()
+      // bloom kick: a sine envelope over ~0.9 s, as in the Nether project
+      const kick = { k: 0 }
+      const tl = gsap
+        .timeline({ onComplete: () => void timelines.delete(portalId) })
         .to(fill, { v: 1, duration: 1.5, ease: 'sine.inOut', onUpdate: () => void (portalFx.fill[portalId] = fill.v) }, 0.08)
         .to(flash, { v: 1, duration: 0.18, ease: 'power2.out', onUpdate: () => void (portalFx.flash[portalId] = flash.v) }, 0.05)
         .to(flash, { v: 0, duration: 1.6, ease: 'power2.inOut', onUpdate: () => void (portalFx.flash[portalId] = flash.v) }, 0.3)
-        .to(cameraFx, { shake: 1, duration: 0.07, ease: 'power1.out' }, 0.06)
-        .to(cameraFx, { shake: 0, duration: 0.9, ease: 'power2.out' }, 0.13)
-        .to(cameraFx, { fov: 1.6, duration: 0.22, ease: 'power2.out' }, 0.1)
-        .to(cameraFx, { fov: 0, duration: 1.2, ease: 'sine.inOut' }, 0.32)
+        .to(kick, { k: 1, duration: 0.9, ease: 'power1.out', onUpdate: () => void (postFx.bloom = Math.sin(kick.k * Math.PI) * 0.7) }, 0.05)
+      timelines.set(portalId, tl)
+      if (!REDUCED_MOTION)
+        tl.to(cameraFx, { shake: 1, duration: 0.07, ease: 'power1.out' }, 0.06)
+          .to(cameraFx, { shake: 0, duration: 0.9, ease: 'power2.out' }, 0.13)
+          .to(cameraFx, { fov: 1.6, duration: 0.22, ease: 'power2.out' }, 0.1)
+          .to(cameraFx, { fov: 0, duration: 1.2, ease: 'sine.inOut' }, 0.32)
     })
     const offFizzle = onGame('fizzle', ({ portalId }) => {
       aim(sparkMat, portalId, '#ff8a3a')
       sparkMat.uniforms.uHot.value = 0
       aim(smokeMat, portalId, '#808080')
       smokeMat.uniforms.uAge.value = -0.12 // smoke follows the dying sparks
-      gsap.timeline().to(cameraFx, { shake: 0.22, duration: 0.05 }).to(cameraFx, { shake: 0, duration: 0.35, ease: 'power2.out' })
+      if (!REDUCED_MOTION) gsap.timeline().to(cameraFx, { shake: 0.22, duration: 0.05 }).to(cameraFx, { shake: 0, duration: 0.35, ease: 'power2.out' })
+    })
+    const offExtinguish = onGame('extinguish', ({ portalId }) => {
+      timelines.get(portalId)?.kill()
+      portalFx.flash[portalId] = 0
+      const tl = gsap.timeline({ onComplete: () => void timelines.delete(portalId) })
+      timelines.set(portalId, tl)
+      if (REDUCED_MOTION) {
+        const f = { v: portalFx.fade[portalId] }
+        tl.to(f, { v: 0, duration: 1.0, ease: 'sine.inOut', onUpdate: () => void (portalFx.fade[portalId] = f.v) }, 0).call(() => {
+          portalFx.fill[portalId] = 0
+          portalFx.fade[portalId] = 1
+        })
+      } else {
+        // the ignite in reverse: lowering `fill` drains the surface from the top, same ragged front
+        const fill = { v: portalFx.fill[portalId] }
+        tl.to(fill, { v: 0, duration: 1.2, ease: 'sine.inOut', onUpdate: () => void (portalFx.fill[portalId] = fill.v) }, 0)
+        // as it reaches the bottom: a few dying sparks, then a small puff of smoke
+        tl.call(() => {
+          aim(sparkMat, portalId, '#ff8a3a')
+          sparkMat.uniforms.uHot.value = 0
+          aim(smokeMat, portalId, '#808080')
+          smokeMat.uniforms.uAge.value = -0.1
+        }, [], 0.85)
+      }
+      // a soft dimming pulse (no shake)
+      tl.to(warpFx, { dim: REDUCED_MOTION ? 0.08 : 0.16, duration: 0.3, ease: 'sine.out' }, 0).to(warpFx, { dim: 0, duration: 1.0, ease: 'sine.inOut' }, 0.3)
     })
     return () => {
       offIgnite()
       offFizzle()
+      offExtinguish()
     }
   }, [sparkMat, smokeMat])
 
@@ -211,13 +253,12 @@ export function PortalFx() {
       const a = m.uniforms.uAge
       if (a.value !== -1) a.value = a.value > 4 ? -1 : a.value + dt
     }
-    // hover outline + frame glow lift (a lit portal only lifts a little: "Coming soon")
+    // hover outline + frame glow lift (full for a lit portal too: "Click to enter")
     const st = appStore.get()
     const t = performance.now() / 1000
     for (const r of rings) {
       const hovered = st.hover?.kind === 'portal' && st.hover.portalId === r.id
-      const lit = isLit(st.litMask, r.id)
-      r.hover = damp(r.hover, hovered ? (lit ? 0.35 : 1) : 0, 10, dt)
+      r.hover = damp(r.hover, hovered ? 1 : 0, 10, dt)
       r.mat.opacity = r.hover * (0.7 + 0.3 * Math.sin(t * 6))
       portalFx.hover[r.id] = r.hover
     }

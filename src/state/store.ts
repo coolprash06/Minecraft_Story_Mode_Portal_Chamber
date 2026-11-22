@@ -32,6 +32,14 @@ export type Quality = 'high' | 'low'
 /** What the pointer (later: the crosshair) is over. */
 export type Hover = { kind: 'frame'; flintId: string } | { kind: 'portal'; portalId: number } | null
 
+/**
+ * Portal entry, step by step (never saved: a reload is always back in the hall):
+ *  hall → entering (walk + jump, or the reduced-motion fade) → warp (warp screen) → dimension
+ *  → returning (back on the rail in front of the portal) → hall. Esc while walking cancels
+ *  (entering → hall).
+ */
+export type Journey = 'hall' | 'entering' | 'warp' | 'dimension' | 'returning'
+
 export interface Toast {
   text: string
   tone: 'info' | 'warn'
@@ -58,17 +66,36 @@ export interface AppState {
   selected: number
   hover: Hover
   toast: Toast | null
+  journey: Journey
+  /** The portal being entered / visited (−1 in the hall). */
+  journeyPortal: number
+  /** Full-screen veil over the canvas: opaque while the dimension side is showing. */
+  veil: boolean
+  /** Veil fade time (ms) for the next change. */
+  veilMs: number
 }
 
 const params = typeof window === 'undefined' ? new URLSearchParams() : new URLSearchParams(window.location.search)
 const coarse = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false)
 
-/** ?lit=all lights every portal; ?lit=0,3,7 lights those. Debug only: never saved. */
+const portalParam = (k: string) => {
+  const v = params.get(k)
+  const n = v === null ? NaN : v === '' ? 0 : Number(v)
+  return Number.isInteger(n) && n >= 0 && n < 18 ? n : -1
+}
+/** ?at=0: start on the rail in front of portal 0, facing it, already lit (GlideRig reads it). */
+export const DEBUG_AT = portalParam('at')
+/** ?dim=0: start on portal 0's dimension screen (Return puts you on the rail in front of it, lit). */
+export const DEBUG_DIM = portalParam('dim')
+
+/** ?lit=all lights every portal; ?lit=0,3,7 lights those. ?at / ?dim light their portal too. Debug only: never saved. */
 function debugLit(): number {
+  let m = 0
+  for (const id of [DEBUG_AT, DEBUG_DIM]) if (id >= 0) m |= 1 << id
   const v = params.get('lit')
-  if (!v) return 0
+  if (!v) return m
   if (v === 'all') return (1 << 18) - 1
-  return v.split(',').reduce((m, s) => (Number.isInteger(+s) && +s >= 0 && +s < 18 ? m | (1 << +s) : m), 0)
+  return v.split(',').reduce((m, s) => (Number.isInteger(+s) && +s >= 0 && +s < 18 ? m | (1 << +s) : m), m)
 }
 export const DEBUG_LIT = debugLit()
 
@@ -176,6 +203,10 @@ export const appStore = createStore<AppState>({
   selected: saved.selected,
   hover: null,
   toast: null,
+  journey: DEBUG_DIM >= 0 ? 'dimension' : 'hall',
+  journeyPortal: DEBUG_DIM,
+  veil: DEBUG_DIM >= 0,
+  veilMs: 0,
 })
 
 // Save only when the persisted fields change (the store also updates every frame for `glide`).

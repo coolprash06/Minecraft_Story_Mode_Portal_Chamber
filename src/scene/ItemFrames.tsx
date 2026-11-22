@@ -4,13 +4,16 @@
  *    flint's colour while it waits;
  *  • a glowing outline while hovered;
  *  • on pickup, the flint lifts off the frame and flies at the camera, landing in its hotbar slot
- *    (GSAP drives the progress; the path is recomputed every frame, so it tracks the moving camera).
+ *    (GSAP drives the progress; the path is recomputed every frame, so it tracks the moving camera);
+ *  • on return, the same flight runs backwards from the hand (HeldItem's pose) into the frame, and
+ *    the halo and sparkles come back once it lands (reduced motion: no flight, the glow fades in).
  */
 import { useEffect, useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
 import gsap from 'gsap'
 import {
   AdditiveBlending,
+  Euler,
   BufferAttribute,
   BufferGeometry,
   Color,
@@ -29,10 +32,12 @@ import { slotMaterials } from '../gfx/materials'
 import { outlineGeometry, outlineMaterial, pointScaleFor, wallMatrix } from '../gfx/outline'
 import { partsToGeometry } from '../gfx/voxel'
 import { onGame } from '../state/events'
-import { landPickup } from '../state/game'
+import { REDUCED_MOTION } from '../lib/device'
+import { landPickup, landReturn } from '../state/game'
 import { appStore } from '../state/store'
 import { hall } from '../world/layout'
 import { damp } from '../lib/random'
+import { HELD_REST, HELD_REST_ROT, HELD_SCALE } from './heldPose'
 import { ITEM_FRAME_PX, ITEM_FRAME_SCALE, itemFrame } from './models'
 
 /** Flint pixel size (m) in the frame: 15 drawn px ≈ 0.62 m inside the 0.71 m backing. */
@@ -149,6 +154,8 @@ const _z = new Vector3(0, 0, 1)
 const _s = new Vector3()
 const _c = new Vector3()
 const _e = new Vector3()
+const _endQ = new Quaternion()
+const HAND_Q = new Quaternion().setFromEuler(new Euler().copy(HELD_REST_ROT))
 
 function FramedFlint({ def, frameGeo, materials }: { def: FlintDef; frameGeo: BufferGeometry; materials: ReturnType<typeof slotMaterials> }) {
   const placement = hall.portals[def.portalId].holders[def.holder]
@@ -184,14 +191,19 @@ function FramedFlint({ def, frameGeo, materials }: { def: FlintDef; frameGeo: Bu
   )
 
   // fx state: `present` = the flint's glow (fades out on pickup); `hover` = damped highlight
-  const st = useRef({ present: appStore.get().taken.includes(def.id) ? 0 : 1, hover: 0, flight: null as null | { t: number; slot: number } })
+  const st = useRef({
+    present: appStore.get().taken.includes(def.id) ? 0 : 1,
+    hover: 0,
+    /** t: 0 = on the frame, 1 = at the end (hotbar slot for 'take', the hand for 'return'). */
+    flight: null as null | { t: number; slot: number; mode: 'take' | 'return' },
+  })
 
   useEffect(
     () =>
       onGame('pickup', ({ flintId, slot }) => {
         if (flintId !== def.id) return
         const s = st.current
-        const flight = { t: 0, slot }
+        const flight = { t: 0, slot, mode: 'take' as const }
         s.flight = flight
         gsap.to(s, { present: 0, duration: 0.35, ease: 'power1.out' })
         gsap.to(flight, {
@@ -203,6 +215,24 @@ function FramedFlint({ def, frameGeo, materials }: { def: FlintDef; frameGeo: Bu
             landPickup(def.id, slot)
           },
         })
+      }),
+    [def.id],
+  )
+  useEffect(
+    () =>
+      onGame('returnFlint', ({ flintId, slot }) => {
+        if (flintId !== def.id) return
+        const s = st.current
+        gsap.killTweensOf(s)
+        const settle = () => {
+          s.flight = null
+          landReturn(def.id)
+          gsap.to(s, { present: 1, duration: 0.5, ease: 'power1.out' })
+        }
+        if (REDUCED_MOTION) return settle()
+        const flight = { t: 1, slot, mode: 'return' as const }
+        s.flight = flight
+        gsap.to(flight, { t: 0, duration: 0.85, ease: 'power2.inOut', onComplete: settle })
       }),
     [def.id],
   )
@@ -230,33 +260,43 @@ function FramedFlint({ def, frameGeo, materials }: { def: FlintDef; frameGeo: Bu
       return
     }
 
-    // ── flight: lift off the frame, swing out over the aisle, land in the hotbar slot ──
+    // ── flight: lift off the frame, swing out over the aisle, land in the hotbar slot (or, for a
+    //    return, the same path backwards from the hand) ──
     m.visible = true
     const t = s.flight.t
     const cam = camera as PerspectiveCamera
-    // end: the slot's screen position, 0.7 m in front of the camera
-    const el = document.querySelector<HTMLElement>(`[data-hotbar-slot="${s.flight.slot}"]`)
-    const r = el?.getBoundingClientRect()
-    const sx = r ? ((r.left + r.width / 2) / window.innerWidth) * 2 - 1 : 0
-    const sy = r ? -((r.top + r.height / 2) / window.innerHeight) * 2 + 1 : -0.85
-    const D = 0.7
-    _e.set(sx, sy, 0.5).unproject(cam).sub(cam.position).normalize()
-    const along = D / Math.max(0.2, _e.dot(_v.set(0, 0, -1).applyQuaternion(cam.quaternion)))
-    _e.multiplyScalar(along).add(cam.position)
+    let endScale: number
+    if (s.flight.mode === 'return') {
+      // end: the held item's pose in front of the camera
+      _e.copy(HELD_REST).applyQuaternion(cam.quaternion).add(cam.position)
+      _endQ.copy(cam.quaternion).multiply(HAND_Q)
+      endScale = HELD_SCALE
+    } else {
+      // end: the slot's screen position, 0.7 m in front of the camera
+      const el = document.querySelector<HTMLElement>(`[data-hotbar-slot="${s.flight.slot}"]`)
+      const r = el?.getBoundingClientRect()
+      const sx = r ? ((r.left + r.width / 2) / window.innerWidth) * 2 - 1 : 0
+      const sy = r ? -((r.top + r.height / 2) / window.innerHeight) * 2 + 1 : -0.85
+      const D = 0.7
+      _e.set(sx, sy, 0.5).unproject(cam).sub(cam.position).normalize()
+      const along = D / Math.max(0.2, _e.dot(_v.set(0, 0, -1).applyQuaternion(cam.quaternion)))
+      _e.multiplyScalar(along).add(cam.position)
+      _endQ.copy(cam.quaternion)
+      // shrink to the icon's size on screen (≈ 70 % of the slot)
+      const pxPerM = window.innerHeight / (2 * D * Math.tan((cam.fov * Math.PI) / 360))
+      endScale = ((r?.height ?? 48) * 0.72) / (FLINT_SPAN * pxPerM)
+    }
     // control point: out of the frame towards the aisle and up
     _s.copy(parts.restPos)
     _c.copy(parts.restPos).addScaledVector(parts.normal, 1.6).add(_v.set(0, 0.7, 0))
     const u = 1 - t
     m.position.set(0, 0, 0).addScaledVector(_s, u * u).addScaledVector(_c, 2 * u * t).addScaledVector(_e, t * t)
-    // turn to face the camera, with one full spin on the way
+    // turn to the end orientation, with one full spin on the way
     const k = t * t * (3 - 2 * t)
-    _q.copy(parts.restQ).slerp(cam.quaternion, k)
+    _q.copy(parts.restQ).slerp(_endQ, k)
     _spin.setFromAxisAngle(_v.set(0, 1, 0), Math.PI * 2 * k)
     _q2.copy(_q).multiply(_spin)
     m.quaternion.copy(_q2)
-    // shrink to the icon's size on screen (≈ 70 % of the slot)
-    const pxPerM = window.innerHeight / (2 * D * Math.tan((cam.fov * Math.PI) / 360))
-    const endScale = ((r?.height ?? 48) * 0.72) / (FLINT_SPAN * pxPerM)
     // a quick "pop" off the frame first, then ease down to the icon size
     const pop = 1 + 0.25 * Math.sin(Math.min(1, t * 3) * Math.PI)
     m.scale.setScalar((1 + (endScale - 1) * Math.pow(t, 1.4)) * pop)

@@ -10,18 +10,29 @@
  *  • Look: click-and-drag (left or right button) turns the view a full 360° and ±60° up/down,
  *    damped. A D ← → also turn. When not dragging, the gaze leans gently towards the cursor.
  *  • ?z=-30 starts at that z, ?yaw=180 / ?pitch=10 (degrees) set the initial view,
- *    ?bench=N glides the whole rail in N seconds (for FPS measurement).
+ *    ?at=0 starts in front of portal 0 facing it, ?bench=N glides the whole rail in N seconds
+ *    (for FPS measurement).
  *  • cameraFx (portal ignition) adds a short shake and an FOV pulse on top.
+ *  • While a portal journey runs (store.journey ≠ 'hall') the rig ignores input and leaves the
+ *    camera to EntryRig; `glideControl.place(z, yaw)` hands it back, blending from wherever the
+ *    camera is to the rail pose over ~0.7 s so the sway and cursor lean never jump.
  */
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import type { PerspectiveCamera } from 'three'
+import { Quaternion, Vector3, type PerspectiveCamera } from 'three'
 import { cameraFx } from '../gfx/portalFx'
 import { clamp, damp } from '../lib/random'
-import { appStore } from '../state/store'
+import { appStore, DEBUG_AT } from '../state/store'
 import { hall } from '../world/layout'
 
 const { zStart, zEnd, y: RAIL_Y } = hall.rail
+export { RAIL_Y }
+/** The camera's resting vertical field of view (degrees). */
+export const BASE_FOV = 62
+/** Yaw (radians) that faces portal `id` square-on from the centre aisle. */
+export const faceYaw = (id: number) => (hall.portals[id].side < 0 ? Math.PI / 2 : -Math.PI / 2)
+/** Hand-back blend time (s) from a scripted camera to the rail. */
+const HANDBACK = 0.7
 const WHEEL_SCALE = 0.012
 const KEY_SPEED = 7
 const TURN_SPEED = 1.7
@@ -41,13 +52,21 @@ const num = (k: string, d: number) => {
   const n = v === null ? NaN : Number(v)
   return Number.isFinite(n) ? n : d
 }
-const startZ = clamp(num('z', zStart), zEnd, zStart)
-const startYaw = (num('yaw', 0) * Math.PI) / 180
+const atPortal = DEBUG_AT >= 0 ? hall.portals[DEBUG_AT] : null
+const startZ = clamp(atPortal ? atPortal.center[2] : num('z', zStart), zEnd, zStart)
+const startYaw = atPortal ? faceYaw(atPortal.id) : (num('yaw', 0) * Math.PI) / 180
 const startPitch = clamp((num('pitch', 0) * Math.PI) / 180, -PITCH_LIMIT, PITCH_LIMIT)
 const benchSeconds = num('bench', 0)
 
 /** True while a drag-look is in progress (so a click handler can ignore the release). */
 export const lookState = { dragging: false, moved: 0 }
+
+/** Hand the camera back to the rail at z, looking along `yaw` (level). Set up by the mounted rig. */
+export const glideControl = {
+  place: (_z: number, _yaw: number) => {},
+}
+
+const _q = new Quaternion()
 
 export function GlideRig() {
   const camera = useThree((s) => s.camera)
@@ -69,13 +88,33 @@ export function GlideRig() {
     fs: -Math.cos(startYaw) > 0 ? 1 : -1,
     lastTouchY: null as number | null,
     benchT: -1,
-    baseFov: null as number | null,
+    /** Hand-back blend (0..1, 1 = pure rail pose) and the pose it starts from. */
+    blend: 1,
+    fromPos: new Vector3(),
+    fromQuat: new Quaternion(),
   })
 
   useEffect(() => {
     const st = s.current
     const el = gl.domElement
-    const active = () => appStore.get().mode === 'glide'
+    const active = () => appStore.get().mode === 'glide' && appStore.get().journey === 'hall'
+
+    glideControl.place = (z, yaw) => {
+      st.target = st.z = clamp(z, zEnd, zStart)
+      Object.assign(st.keys, { fwd: false, back: false, left: false, right: false })
+      st.down = null
+      // pre-compensate the cursor lean, so the rail pose looks exactly along `yaw`
+      st.lean.x = st.mouse.x
+      st.lean.y = st.mouse.y
+      st.lean.w = 1
+      st.yaw = st.yawT = yaw + st.lean.x * 0.2
+      st.pitch = st.pitchT = clamp(st.lean.y * 0.1 - 0.02, -PITCH_LIMIT, PITCH_LIMIT)
+      const fwdZ = -Math.cos(st.yaw)
+      if (Math.abs(fwdZ) > FACING_DEADBAND) st.fs = fwdZ > 0 ? 1 : -1
+      st.fromPos.copy(camera.position)
+      st.fromQuat.copy(camera.quaternion)
+      st.blend = 0
+    }
     const move = (dz: number) => (st.target = clamp(st.target + dz, zEnd, zStart))
 
     const onWheel = (e: WheelEvent) => {
@@ -151,11 +190,11 @@ export function GlideRig() {
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [gl])
+  }, [gl, camera])
 
   useFrame((_, dt) => {
     const st = s.current
-    if (appStore.get().mode !== 'glide') return
+    if (appStore.get().mode !== 'glide' || appStore.get().journey !== 'hall') return
     st.t += dt
 
     if (benchSeconds > 0 && appStore.get().sceneReady) {
@@ -201,9 +240,15 @@ export function GlideRig() {
       camera.position.y += (Math.sin(t * 47.9 + 0.6) * 0.6 + Math.sin(t * 89.3) * 0.4) * 0.028 * sh
     }
     camera.rotation.set(pitch + Math.sin(t * 53.7) * 0.005 * sh, yaw + Math.sin(t * 38.9 + 2.1) * 0.005 * sh, roll + Math.sin(t * 29.3) * 0.006 * sh, 'YXZ')
+    if (st.blend < 1) {
+      st.blend = Math.min(1, st.blend + dt / HANDBACK)
+      const k = st.blend * st.blend * (3 - 2 * st.blend)
+      camera.position.lerpVectors(st.fromPos, camera.position, k)
+      _q.copy(camera.quaternion)
+      camera.quaternion.slerpQuaternions(st.fromQuat, _q, k)
+    }
     const cam = camera as PerspectiveCamera
-    st.baseFov ??= cam.fov
-    const fov = st.baseFov + cameraFx.fov
+    const fov = BASE_FOV + cameraFx.fov
     if (Math.abs(cam.fov - fov) > 1e-4) {
       cam.fov = fov
       cam.updateProjectionMatrix()

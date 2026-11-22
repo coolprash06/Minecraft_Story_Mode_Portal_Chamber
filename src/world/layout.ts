@@ -110,6 +110,13 @@ export interface Decor {
   racks: { position: V3; normal: V3; seed: number }[]
   /** Royal carpet runner down the centre aisle. */
   carpet: { halfWidth: number; zStart: number; zEnd: number }
+  /**
+   * Side runners, one per portal (index = portal id): at a right angle from the main carpet to the
+   * recess lip, centred on the portal. `xFrom` tucks just under the main carpet's edge.
+   */
+  runners: { portalId: number; side: Side; z: number; xFrom: number; xTo: number; halfWidth: number }[]
+  /** A flat mat on the recess floor in front of each frame (index = portal id). Position = centre on the floor. */
+  mats: { portalId: number; side: Side; position: V3; width: number; depth: number }[]
   /** The end-wall finale: the Founding King's portrait (canvas centre) and its nameplate (centre). */
   finale: { portrait: { position: V3; normal: V3 }; plaque: { position: V3; normal: V3 } }
 }
@@ -171,6 +178,8 @@ export function buildHall(): HallLayout {
     banners: [],
     racks: [],
     carpet: { halfWidth: 0.75, zStart: HALL.zBack - 0.5, zEnd: HALL.zFar + 1.5 },
+    runners: [],
+    mats: [],
     finale: { portrait: { position: [0, 0, 0], normal: [0, 0, 1] }, plaque: { position: [0, 0, 0], normal: [0, 0, 1] } },
   }
   const frameOwner = new Map<string, number>()
@@ -228,6 +237,10 @@ export function buildHall(): HallLayout {
         for (let y = 0; y <= 5; y++) for (let z = fz1; z <= fz0; z++) frameOwner.set(cellKey(s * (W + 2), y, z), portals.length)
 
         const cz = pz - 5
+        // Side runner from the main carpet to the recess lip (x = ±5.5), then a mat on the recess
+        // floor, as wide as the opening, stopping just short of the frame's sill.
+        decor.runners.push({ portalId: portals.length, side: s, z: cz, xFrom: s * (decor.carpet.halfWidth - 0.05), xTo: s * (W + 0.5), halfWidth: 0.5 })
+        decor.mats.push({ portalId: portals.length, side: s, position: [s * (W + 0.95), 0, cz], width: 3, depth: 0.9 })
         portals.push({
           id: portals.length,
           color,

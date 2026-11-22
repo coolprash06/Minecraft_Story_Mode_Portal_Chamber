@@ -11,6 +11,19 @@ export interface GameEvents {
   ignite: { portalId: number }
   /** Wrong flint: sparks die in grey smoke. */
   fizzle: { portalId: number }
+  /** The held flint flies from the hand back into its frame (it already left hotbar `slot`). */
+  returnFlint: { flintId: string; slot: number }
+  /** Its flint was returned while the portal was lit: drain the surface, smoke, dim. */
+  extinguish: { portalId: number }
+  /**
+   * Start entering a lit portal. 'glide': leave the rail, walk the runner, jump in.
+   * 'free' (Free Roam, later): the player jumped into the opening themselves; only the crossing runs.
+   */
+  enter: { portalId: number; from: 'glide' | 'free' }
+  /** Esc while walking: glide back onto the rail. */
+  cancelEntry: { portalId: number }
+  /** "Return to Corridor": back on the rail in front of the portal. */
+  return: { portalId: number }
 }
 
 type Handler<K extends keyof GameEvents> = (e: GameEvents[K]) => void

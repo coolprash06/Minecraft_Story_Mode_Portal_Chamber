@@ -61,3 +61,29 @@ canvas {
     transform: translateY(0);
   }
 }
+
+/* Dimension screen: the title block rising in, and the return button (hotbar-style, portal glow). */
+@keyframes dimrise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.dim-btn {
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.08),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.45),
+    0 4px 0 rgba(0, 0, 0, 0.35);
+}
+.dim-btn:enabled:hover,
+.dim-btn:focus-visible {
+  box-shadow:
+    inset 3px 3px 0 rgba(255, 255, 255, 0.12),
+    inset -3px -3px 0 rgba(0, 0, 0, 0.45),
+    0 0 0 2px var(--glow),
+    0 0 24px var(--glow);
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { flintById } from '../config/items'
 import { pointer } from '../controls/Interaction'
-import { heldFlint } from '../state/game'
+import { heldFlint, returnCheck } from '../state/game'
 import { isLit, useApp } from '../state/store'
 import { textColor } from './Hotbar'
 
@@ -9,8 +9,10 @@ import { textColor } from './Hotbar'
 export function Prompt() {
   const hover = useApp((s) => s.hover)
   const litMask = useApp((s) => s.litMask)
-  // re-read the held flint when the selection changes
+  // re-read the held flint / frame state when the selection, hotbar or frames change
   useApp((s) => s.selected)
+  useApp((s) => s.hotbar)
+  const taken = useApp((s) => s.taken)
   const el = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -31,13 +33,21 @@ export function Prompt() {
   let body: React.ReactNode = null
   if (hover?.kind === 'frame') {
     const def = flintById(hover.flintId)
-    body = (
-      <>
-        Click to take <span style={{ color: def ? textColor(def.color) : undefined }}>{def?.name}</span>
-      </>
-    )
+    const name = <span style={{ color: def ? textColor(def.color) : undefined }}>{def?.name}</span>
+    if (!taken.includes(hover.flintId)) body = <>Click to take {name}</>
+    else {
+      const check = returnCheck(hover.flintId)
+      body =
+        check === 'return' ? (
+          <>Click to return {name}</>
+        ) : check === 'wrong' ? (
+          "This isn't its frame"
+        ) : check === 'hold' ? (
+          <>Hold {name} to return it</>
+        ) : null
+    }
   } else if (hover?.kind === 'portal') {
-    body = isLit(litMask, hover.portalId) ? 'Coming soon' : heldFlint() ? 'Click to light' : 'Unlit portal'
+    body = isLit(litMask, hover.portalId) ? 'Click to enter' : heldFlint() ? 'Click to light' : 'Unlit portal'
   }
 
   return (

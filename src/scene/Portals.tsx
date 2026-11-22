@@ -5,7 +5,9 @@
  *  • `fill` (0..1, portalFx) reveals the surface from the bottom of the opening up, behind a
  *    bright ragged front; lighting a portal tweens it over ~1.5 s, a portal lit at load starts full.
  *    `level` (the light field's fade) eases the brightness in alongside;
- *  • soft square motes drift out of each lit portal into the hall and fade.
+ *  • soft square motes drift out of each lit portal into the hall and fade;
+ *  • entry "spiral mode" (portalFx.spiral, tweened by EntryRig): rings and log-spiral arms grow out
+ *    from the centre over the swirl, which speeds up, and the motes stream back into the opening.
  */
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -27,6 +29,7 @@ import { PORTAL_COLORS } from '../config/portals'
 import { FOG_DENSITY } from '../config/theme'
 import { lightField } from '../gfx/lightField'
 import { portalFx } from '../gfx/portalFx'
+import { OFF } from '../lib/debug'
 import { hall } from '../world/layout'
 
 const P = hall.portals.length
@@ -51,11 +54,11 @@ function surfaceMaterial() {
   return new ShaderMaterial({
     uniforms: { uTime: time, uFog: { value: FOG_DENSITY } },
     vertexShader: /* glsl */ `
-      attribute vec3 aColor; attribute float aLevel; attribute float aSeed; attribute float aFill;
+      attribute vec3 aColor; attribute float aLevel; attribute float aSeed; attribute float aFill; attribute vec3 aSpiral;
       uniform float uFog;
-      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill;
+      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill; varying vec3 vSpiral;
       void main() {
-        vUv = uv; vColor = aColor; vLevel = aLevel; vSeed = aSeed; vFill = aFill;
+        vUv = uv; vColor = aColor; vLevel = aLevel; vSeed = aSeed; vFill = aFill; vSpiral = aSpiral;
         vec4 mv = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
         float f = uFog * -mv.z; vFog = exp(-f * f);
         gl_Position = projectionMatrix * mv;
@@ -63,8 +66,9 @@ function surfaceMaterial() {
     fragmentShader: /* glsl */ `
       ${NOISE}
       uniform float uTime;
-      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill;
+      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill; varying vec3 vSpiral;
       void main() {
+        if (vFill < 0.002 || vSpiral.z < 0.004) discard;
         if (vFill < 0.002) discard;
         // 3 × 4 blocks → 48 × 64 pixels
         vec2 grid = vec2(48.0, 64.0);
@@ -79,7 +83,8 @@ function surfaceMaterial() {
         if (reveal < 0.0) discard;
         float lvl = vLevel * vLevel * (3.0 - 2.0 * vLevel);
 
-        float t = uTime * 0.55 + vSeed * 20.0;
+        // vSpiral.y: extra clock that runs while spiral mode is on (the swirl speeds up smoothly)
+        float t = uTime * 0.55 + vSeed * 20.0 + vSpiral.y * 0.55;
         // domain-warped logarithmic spiral: continuous arms that turn and drift, broken up by noise
         vec2 w = p + (vec2(fbm(p * 0.8 + vec2(t * 0.15, 0.0)), fbm(p * 0.8 + vec2(5.2, -t * 0.12))) - 0.5) * 1.1;
         float r = length(w) + 0.001;
@@ -98,12 +103,28 @@ function surfaceMaterial() {
         vec3 col = mix(deep, mid, smoothstep(0.1, 0.6, v));
         col = mix(col, hot, smoothstep(0.65, 1.0, v));
         col += mix(vColor, vec3(1.0), 0.5) * sparkle;
+
+        // entry spiral: rotating rings + spiral arms reaching out from the centre, a pulsing core
+        if (vSpiral.x > 0.001) {
+          float sr = length(p);
+          float ang = atan(p.y, p.x);
+          float st = uTime + vSpiral.y;
+          float rings = 0.5 + 0.5 * sin(sr * 9.0 - st * 7.0);
+          float arms = 0.5 + 0.5 * sin(ang * 3.0 + log(sr + 0.05) * 6.0 - st * 5.5);
+          float pat = smoothstep(0.55, 0.95, max(rings * 0.9, arms));
+          pat = floor(pat * 3.0 + 0.5) / 3.0;
+          float reach = 1.0 - smoothstep(vSpiral.x * 3.0 - 0.45, vSpiral.x * 3.0, sr);
+          float core = exp(-sr * sr * 2.2) * (0.6 + 0.4 * sin(st * 8.0));
+          col = mix(col, deep * 0.7 + col * 0.3, reach * 0.65);
+          col += mix(vColor, vec3(1.0), 0.35) * 1.5 * pat * reach + mix(vColor, vec3(1.0), 0.6) * core * vSpiral.x * 1.3;
+        }
         // bright front where the surface is still climbing (gone once full)
         float forming = 1.0 - smoothstep(0.9, 1.0, vFill);
         col += mix(vColor, vec3(1.0), 0.45) * 2.6 * (1.0 - smoothstep(0.0, 0.07, reveal)) * forming;
         col += vColor * 0.6 * (1.0 - smoothstep(0.0, 0.3, reveal)) * forming;
         float intensity = 1.35 * (0.88 + 0.12 * sin(uTime * 1.7 + vSeed * 9.0)) * mix(0.55, 1.0, lvl);
-        gl_FragColor = vec4(col * intensity * vFog, 1.0);
+        // vSpiral.z: fade (reduced-motion extinguish); 1 normally
+        gl_FragColor = vec4(col * intensity * vFog * vSpiral.z, 1.0);
       }`,
     toneMapped: false,
   })
@@ -143,15 +164,20 @@ function moteGeometry() {
 
 function moteMaterial() {
   return new ShaderMaterial({
-    uniforms: { uTime: time, uLevel: portalLevel, uScale: pointScale, uFog: { value: FOG_DENSITY } },
+    uniforms: { uTime: time, uLevel: portalLevel, uScale: pointScale, uFog: { value: FOG_DENSITY }, uSpiral: { value: portalFx.spiral }, uMoteTime: { value: portalFx.moteTime } },
     vertexShader: /* glsl */ `
       uniform float uTime; uniform float uLevel[${P}]; uniform float uScale; uniform float uFog;
+      uniform float uSpiral[${P}]; uniform float uMoteTime[${P}];
       attribute vec3 aNormal; attribute vec3 aColor; attribute float aSeed; attribute float aIdx;
       varying vec3 vColor; varying float vAlpha;
       void main() {
-        float level = uLevel[int(aIdx)];
-        float life = fract(uTime * (0.12 + aSeed * 0.12) + aSeed * 31.0);
-        vec3 p = position + aNormal * (0.05 + life * (1.6 + aSeed * 1.4));
+        int idx = int(aIdx);
+        float level = uLevel[idx];
+        float spiral = uSpiral[idx];
+        // uMoteTime runs faster during spiral mode; the motes then flow back into the opening
+        float life = fract(uMoteTime[idx] * (0.12 + aSeed * 0.12) + aSeed * 31.0);
+        float out_ = mix(life, 1.0 - life, spiral);
+        vec3 p = position + aNormal * (0.05 + out_ * (1.6 + aSeed * 1.4));
         p.y += sin(uTime * 0.8 + aSeed * 30.0) * 0.25 * life + life * 0.6 * (aSeed - 0.4);
         vec3 side = cross(aNormal, vec3(0.0, 1.0, 0.0));
         p += side * sin(uTime * 0.6 + aSeed * 50.0) * 0.3 * life;
@@ -160,7 +186,7 @@ function moteMaterial() {
         gl_PointSize = max(1.0, (0.05 + 0.04 * fract(aSeed * 9.7)) * uScale / -mv.z);
         float f = uFog * -mv.z;
         vAlpha = smoothstep(0.0, 0.1, life) * (1.0 - life) * level * exp(-f * f);
-        vColor = mix(aColor, vec3(1.0), 0.35);
+        vColor = mix(aColor, vec3(1.0), 0.35) * (1.0 + spiral);
       }`,
     fragmentShader: /* glsl */ `
       varying vec3 vColor; varying float vAlpha;
@@ -177,7 +203,7 @@ function moteMaterial() {
 
 export function Portals() {
   const ref = useRef<InstancedMesh>(null)
-  const { geo, mat, levelAttr, fillAttr, motes, moteMat } = useMemo(() => {
+  const { geo, mat, levelAttr, fillAttr, spiralAttr, motes, moteMat } = useMemo(() => {
     const geo = new PlaneGeometry(1, 1)
     const color = new Float32Array(P * 3)
     const seed = new Float32Array(P)
@@ -188,11 +214,13 @@ export function Portals() {
     })
     const levelAttr = new InstancedBufferAttribute(new Float32Array(P), 1)
     const fillAttr = new InstancedBufferAttribute(new Float32Array(P), 1)
+    const spiralAttr = new InstancedBufferAttribute(new Float32Array(P * 3), 3)
     geo.setAttribute('aColor', new InstancedBufferAttribute(color, 3))
     geo.setAttribute('aSeed', new InstancedBufferAttribute(seed, 1))
     geo.setAttribute('aLevel', levelAttr)
     geo.setAttribute('aFill', fillAttr)
-    return { geo, mat: surfaceMaterial(), levelAttr, fillAttr, motes: moteGeometry(), moteMat: moteMaterial() }
+    geo.setAttribute('aSpiral', spiralAttr)
+    return { geo, mat: surfaceMaterial(), levelAttr, fillAttr, spiralAttr, motes: moteGeometry(), moteMat: moteMaterial() }
   }, [])
 
   const placed = useRef(false)
@@ -213,16 +241,23 @@ export function Portals() {
       const s = lightField.sources[sourceOf[i]]
       levelAttr.array[i] = s.level
       fillAttr.array[i] = portalFx.fill[i]
+      const sp = portalFx.spiral[i]
+      portalFx.spiralTime[i] += dt * sp * 1.5
+      portalFx.moteTime[i] += dt * (1 + sp * 2.5)
+      spiralAttr.array[i * 3] = sp
+      spiralAttr.array[i * 3 + 1] = portalFx.spiralTime[i]
+      spiralAttr.array[i * 3 + 2] = portalFx.fade[i]
     }
     levelAttr.needsUpdate = true
     fillAttr.needsUpdate = true
+    spiralAttr.needsUpdate = true
     pointScale.value = gl.domElement.height / (2 * Math.tan((((camera as PerspectiveCamera).fov ?? 60) * Math.PI) / 360))
   })
 
   return (
     <group name="portals">
-      <instancedMesh ref={ref} args={[geo, mat, P]} frustumCulled={false} />
-      <points geometry={motes} material={moteMat} frustumCulled={false} renderOrder={5} />
+      <instancedMesh ref={ref} args={[geo, mat, P]} frustumCulled={false} visible={!OFF.has('surfaces')} />
+      <points geometry={motes} material={moteMat} frustumCulled={false} renderOrder={5} visible={!OFF.has('motes')} />
     </group>
   )
 }

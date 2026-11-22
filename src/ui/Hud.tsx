@@ -7,8 +7,10 @@ import { Prompt, Toasts } from './Prompt'
 /** HUD: title, mode badge, controls hint, hover prompt, messages and the hotbar. */
 export function Hud() {
   const mode = useApp((s) => s.mode)
+  // fades away while entering a portal, and back once on the rail again
+  const away = useApp((s) => s.journey) !== 'hall'
   return (
-    <div className="pointer-events-none fixed inset-0 z-10 select-none">
+    <div className={`pointer-events-none fixed inset-0 z-10 select-none transition-opacity duration-500 ${away ? 'invisible opacity-0' : 'opacity-100'}`} style={{ transitionProperty: 'opacity, visibility' }}>
       <div className="absolute left-4 top-4 flex flex-col gap-2 sm:left-6 sm:top-6">
         <h1 className="font-pixel text-[10px] tracking-[0.2em] text-[#e9e6f2]/80 sm:text-xs" style={{ textShadow: '2px 2px 0 #000' }}>
           THE HALL OF PORTALS

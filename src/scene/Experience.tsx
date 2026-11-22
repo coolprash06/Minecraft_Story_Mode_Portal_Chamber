@@ -3,13 +3,15 @@ import { advance, Canvas, useThree } from '@react-three/fiber'
 import gsap from 'gsap'
 import { ACESFilmicToneMapping, HalfFloatType, SRGBColorSpace, WebGLRenderTarget, type PerspectiveCamera } from 'three'
 import { COLORS, FOG_DENSITY } from '../config/theme'
-import { GlideRig } from '../controls/GlideRig'
+import { EntryRig } from '../controls/EntryRig'
+import { BASE_FOV, GlideRig } from '../controls/GlideRig'
 import { Interaction } from '../controls/Interaction'
+import { OFF } from '../lib/debug'
 import { appStore, useApp } from '../state/store'
 import { hall } from '../world/layout'
 import { Atmosphere } from './Atmosphere'
 import { Corridor } from './Corridor'
-import { Banners, Carpet } from './Decor'
+import { Banners, Carpet, Runners } from './Decor'
 import { Effects, NO_POST } from './Effects'
 import { Finale } from './Finale'
 import { Flames } from './Flames'
@@ -39,27 +41,29 @@ export const Experience = memo(function Experience() {
       frameloop="never"
       shadows={SHADOW_TYPE}
       gl={{ antialias: false, powerPreference: 'high-performance', toneMapping: ACESFilmicToneMapping, outputColorSpace: SRGBColorSpace, stencil: false }}
-      camera={{ fov: 62, near: 0.05, far: 140, position: [0, hall.rail.y, hall.rail.zStart] }}
+      camera={{ fov: BASE_FOV, near: 0.05, far: 140, position: [0, hall.rail.y, hall.rail.zStart] }}
     >
       <FrameDriver />
       <color attach="background" args={[COLORS.fog]} />
       <fogExp2 attach="fog" args={[COLORS.fog, FOG_DENSITY]} />
       <Lighting />
       <GlideRig />
-      {/* after the rig: picks against this frame's camera */}
+      <EntryRig />
+      {/* after the rigs: picks against this frame's camera */}
       <Interaction />
       <Corridor />
-      <Carpet />
-      <Props />
-      <Hanging />
-      <Banners />
-      <Finale />
+      {!OFF.has('carpet') && <Carpet />}
+      {!OFF.has('runners') && <Runners />}
+      {!OFF.has('props') && <Props />}
+      {!OFF.has('hanging') && <Hanging />}
+      {!OFF.has('banners') && <Banners />}
+      {!OFF.has('finale') && <Finale />}
       <Portals />
-      <PortalFx />
-      <ItemFrames />
-      <HeldItem />
-      <Flames />
-      <Atmosphere />
+      {!OFF.has('portalfx') && <PortalFx />}
+      {!OFF.has('frames') && <ItemFrames />}
+      {!OFF.has('held') && <HeldItem />}
+      {!OFF.has('flames') && <Flames />}
+      {!OFF.has('dust') && <Atmosphere />}
       <Effects />
       {GPU_TIMING && !NO_POST && <GpuTimer />}
       <ReadySignal />
@@ -70,9 +74,14 @@ export const Experience = memo(function Experience() {
 /** Longest step (s) any animation advances in one frame; longer gaps count as a pause. */
 const MAX_STEP = 0.05
 
+/** Frames rendered after the scene is ready before the 3D view may pause (post shaders compile). */
+const WARM_FRAMES = 20
+
 /**
  * The single frame loop (as in the Breaking Bad project): GSAP and R3F advance from the same
  * vsync-aligned rAF timestamp, so camera motion never micro-stutters against tweens.
+ * While the warp / dimension screens cover the canvas, the 3D view stops rendering (GSAP keeps
+ * running for the screens); it resumes the moment the journey turns back towards the hall.
  */
 function FrameDriver() {
   useEffect(() => {
@@ -81,13 +90,18 @@ function FrameDriver() {
     let last = -1
     let gsapTime = gsap.ticker.time
     let sceneTime = 0
+    let readyFrames = 0
     const tick = (ts: number) => {
       raf = requestAnimationFrame(tick)
       const dt = last < 0 ? 0 : Math.min(Math.max((ts - last) / 1000, 0), MAX_STEP)
       last = ts
       gsapTime += dt
-      sceneTime += dt
       gsap.updateRoot(gsapTime)
+      const st = appStore.get()
+      if (st.sceneReady && readyFrames < WARM_FRAMES) readyFrames++
+      const covered = st.journey === 'warp' || st.journey === 'dimension'
+      if (covered && readyFrames >= WARM_FRAMES) return
+      sceneTime += dt
       advance(sceneTime)
     }
     raf = requestAnimationFrame(tick)

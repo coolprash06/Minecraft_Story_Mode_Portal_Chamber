@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { flintById, HOTBAR_SLOTS } from '../config/items'
 import { flintIcon } from '../gfx/flintArt'
 import { selectSlot } from '../state/game'
-import { useApp } from '../state/store'
+import { appStore, useApp } from '../state/store'
 
 /** Lighter version of an item colour, readable as text on the dark HUD. */
 export function textColor(hex: string) {
@@ -42,7 +42,7 @@ export function Hotbar() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey || appStore.get().journey !== 'hall') return
       const n = Number(e.key)
       if (Number.isInteger(n) && n >= 1 && n <= HOTBAR_SLOTS) selectSlot(n - 1)
     }

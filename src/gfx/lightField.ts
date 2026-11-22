@@ -26,6 +26,8 @@ import {
 } from 'three'
 import { PORTAL_COLORS } from '../config/portals'
 import { COLORS } from '../config/theme'
+import { portalFx } from './portalFx'
+import { OFF } from '../lib/debug'
 import { appStore, isLit } from '../state/store'
 import { hall, HALL, type LanternInfo } from '../world/layout'
 import { lanternFlicker, pivotMatrix, soulFlicker, torchFlicker } from '../world/motion'
@@ -208,7 +210,7 @@ class LightField {
     for (const s of this.sources) {
       // targets
       if (s.kind === 'torch') s.target = st.torchesOn ? 1 : 0
-      else if (s.kind === 'portal') s.target = isLit(st.litMask, s.owner) ? 1 : 0
+      else if (s.kind === 'portal') s.target = isLit(st.litMask, s.owner) && !OFF.has('portallight') ? 1 : 0
       if (s.level !== s.target) {
         const step = s.rate * dt
         s.level = s.level < s.target ? Math.min(s.target, s.level + step) : Math.max(s.target, s.level - step)
@@ -218,7 +220,7 @@ class LightField {
         s.kind === 'torch'
           ? torchFlicker(s.seed, t)
           : s.kind === 'portal'
-            ? 0.94 + 0.06 * Math.sin(t * 1.7 + s.seed)
+            ? (0.94 + 0.06 * Math.sin(t * 1.7 + s.seed)) * (1 + 0.35 * portalFx.spiral[s.owner])
             : s.kind === 'chandelier'
               ? soulFlicker(s.seed, t)
               : lanternFlicker(s.seed, t)

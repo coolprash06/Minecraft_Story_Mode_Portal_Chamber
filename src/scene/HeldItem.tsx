@@ -10,11 +10,12 @@ import { flintById } from '../config/items'
 import { slotMaterials } from '../gfx/materials'
 import { onGame } from '../state/events'
 import { appStore } from '../state/store'
+import { HELD_REST, HELD_REST_ROT, HELD_SCALE } from './heldPose'
 import { flintGeometry } from './ItemFrames'
 
-/** Camera-space rest pose. */
-const REST = new Vector3(0.27, -0.2, -0.6)
-const REST_ROT = new Euler(0.12, -0.45, 0.28)
+/** Camera-space rest pose (shared with the flint's return flight, which starts from the hand). */
+const REST = HELD_REST
+const REST_ROT = HELD_REST_ROT
 const _off = new Vector3()
 const _q = new Quaternion()
 const _e = new Euler()
@@ -25,6 +26,20 @@ export function HeldItem() {
   /** equip: 0 = lowered out of view, 1 = held. swing: 0..1 strike motion. */
   const st = useRef({ id: null as string | null, target: null as string | null, equip: 0, swing: 0, tween: null as gsap.core.Tween | null })
 
+  // returning the flint: it leaves the hand at once (the frame's flight takes over from this pose)
+  useEffect(
+    () =>
+      onGame('returnFlint', () => {
+        const s = st.current
+        s.tween?.kill()
+        gsap.killTweensOf(s)
+        s.id = null
+        s.target = null
+        s.equip = 0
+        s.swing = 0
+      }),
+    [],
+  )
   useEffect(
     () =>
       onGame('strike', () => {
@@ -40,7 +55,8 @@ export function HeldItem() {
     if (!m) return
     const s = st.current
     const state = appStore.get()
-    const want = state.selected >= 0 ? state.hotbar[state.selected] : null
+    // put away while entering a portal (and out of view until back in the hall)
+    const want = state.journey === 'hall' && state.selected >= 0 ? state.hotbar[state.selected] : null
     if (want !== s.target) {
       // lower the current item (if any), swap, raise the new one
       s.target = want
@@ -70,5 +86,5 @@ export function HeldItem() {
     m.quaternion.copy(camera.quaternion).multiply(_q)
   })
 
-  return <mesh ref={ref} material={materials} visible={false} frustumCulled={false} scale={0.3} dispose={null} />
+  return <mesh ref={ref} material={materials} visible={false} frustumCulled={false} scale={HELD_SCALE} dispose={null} />
 }
