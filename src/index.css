@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-pixel: 'Press Start 2P', ui-monospace, monospace;
+  --font-term: 'VT323', ui-monospace, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  background: #05060c;
+  color: #e9e6f2;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+canvas {
+  touch-action: none;
+  display: block;
+}
+
+/* Crisp pixel text: no smoothing on the bitmap-style fonts. */
+.font-pixel,
+.font-term {
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
