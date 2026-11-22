@@ -1,7 +1,7 @@
 /**
  * Drifting dust: a box of motes that wraps around the camera (so the whole hall always has dust
- * without simulating 110 m of it). Motes are faint, warm, and pick up a little brightness near
- * the floor and in the upper air where light pools.
+ * without simulating 110 m of it). Motes are faint and warm, turning faint cyan up in the centre
+ * aisle among the soul-fire chandeliers.
  */
 import { useMemo } from 'react'
 import { useFrame } from '@react-three/fiber'
@@ -33,17 +33,21 @@ export function Atmosphere() {
         uOrigin: { value: new Vector3() },
         uBox: { value: BOX },
         uColor: { value: new Color('#ffd9a8') },
+        // up among the soul-fire chandeliers (centre aisle, high) the motes turn faint cyan
+        uSoulColor: { value: new Color('#7fdcff').multiplyScalar(0.8) },
         uFog: { value: FOG_DENSITY },
       },
       vertexShader: /* glsl */ `
         uniform float uTime; uniform float uScale; uniform vec3 uOrigin; uniform vec3 uBox; uniform float uFog;
         attribute float aSeed;
         varying float vAlpha;
+        varying float vSoul;
         void main() {
           vec3 p = position + vec3(sin(uTime * 0.11 + aSeed * 30.0) * 0.6, uTime * (0.03 + aSeed * 0.04), uTime * 0.05);
           // wrap into a box centred on the camera (floor-aligned in y)
           vec3 lo = vec3(uOrigin.x - uBox.x * 0.5, 0.0, uOrigin.z - uBox.z * 0.5);
           p = lo + mod(p - lo, uBox);
+          vSoul = smoothstep(5.5, 8.5, p.y) * (1.0 - smoothstep(2.5, 5.5, abs(p.x)));
           vec4 mv = viewMatrix * vec4(p, 1.0);
           gl_Position = projectionMatrix * mv;
           float size = (0.012 + 0.02 * fract(aSeed * 7.13)) * uScale / -mv.z;
@@ -57,12 +61,14 @@ export function Atmosphere() {
         }`,
       fragmentShader: /* glsl */ `
         uniform vec3 uColor;
+        uniform vec3 uSoulColor;
         varying float vAlpha;
+        varying float vSoul;
         void main() {
           float d = length(gl_PointCoord - 0.5) * 2.0;
           float a = smoothstep(1.0, 0.2, d) * vAlpha;
           if (a < 0.004) discard;
-          gl_FragColor = vec4(uColor * a, 1.0);
+          gl_FragColor = vec4(mix(uColor, uSoulColor, vSoul) * a, 1.0);
         }`,
       transparent: true,
       depthWrite: false,

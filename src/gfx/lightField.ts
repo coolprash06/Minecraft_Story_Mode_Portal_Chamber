@@ -28,7 +28,7 @@ import { PORTAL_COLORS } from '../config/portals'
 import { COLORS } from '../config/theme'
 import { appStore, isLit } from '../state/store'
 import { hall, HALL, type LanternInfo } from '../world/layout'
-import { lanternFlicker, pivotMatrix, torchFlicker } from '../world/motion'
+import { lanternFlicker, pivotMatrix, soulFlicker, torchFlicker } from '../world/motion'
 
 export type SourceKind = 'torch' | 'lantern' | 'chandelier' | 'portal'
 
@@ -65,7 +65,9 @@ export interface LightSource {
 
 export const LIGHT = {
   torch: { color: COLORS.torch, intensity: 9, range: 8.5 },
-  chandelier: { color: COLORS.lantern, intensity: 36, range: 15 },
+  // Soul fire: cool and soft. ~40 % of the old warm chandelier on the floor (lower intensity and a
+  // tighter range), and cyan carries almost no red, so the carpet and the portal pools keep their colour.
+  chandelier: { color: COLORS.soul, intensity: 18, range: 12 },
   hanging: { color: COLORS.lantern, intensity: 9, range: 9 },
   standing: { color: COLORS.lantern, intensity: 7, range: 8 },
   portal: { intensity: 34, range: 12 },
@@ -104,7 +106,8 @@ function buildSources(): LightSource[] {
       // light sits at the lantern's centre / just under the chandelier hub, relative to the pivot
       const drop = l.anchor[1] - l.position[1]
       // chandelier: level with its arm lanterns; hanging lantern: its glowing core
-      local = new Vector3(0, -drop - (l.kind === 'chandelier' ? 1.45 : 0.83), 0)
+      // (soul chandelier: just below the cage floors, clear of the gold hub and finial)
+      local = new Vector3(0, -drop - (l.kind === 'chandelier' ? 2.3 : 0.83), 0)
     } else pos.y += 0.95 * (l.scale ?? 1) // just above the cage: no hot spot on the polished floor
     const margin = local ? Math.abs(local.y) * 0.05 + 0.1 : 0
     const boost = l.boost ?? 1
@@ -116,7 +119,7 @@ function buildSources(): LightSource[] {
     const pos = new Vector3(...p.center).add(new Vector3(...p.normal).multiplyScalar(1.4))
     pos.y = 2.4
     const on = isLit(lit, p.id) ? 1 : 0
-    add({ kind: 'portal', owner: p.id, pos, local: null, lantern: null, color: lin(PORTAL_COLORS[p.color]), intensity: LIGHT.portal.intensity, range: LIGHT.portal.range, margin: 0, seed: p.id, level: on, rate: 0.9 })
+    add({ kind: 'portal', owner: p.id, pos, local: null, lantern: null, color: lin(PORTAL_COLORS[p.color]), intensity: LIGHT.portal.intensity, range: LIGHT.portal.range, margin: 0, seed: p.id, level: on, rate: 0.75 })
   }
   if (out.length > MAX_LIGHTS) throw new Error(`light field: ${out.length} sources > ${MAX_LIGHTS}`)
   return out
@@ -211,7 +214,14 @@ class LightField {
         s.level = s.level < s.target ? Math.min(s.target, s.level + step) : Math.max(s.target, s.level - step)
       }
       // flicker + sway
-      s.flicker = s.kind === 'torch' ? torchFlicker(s.seed, t) : s.kind === 'portal' ? 0.94 + 0.06 * Math.sin(t * 1.7 + s.seed) : lanternFlicker(s.seed, t)
+      s.flicker =
+        s.kind === 'torch'
+          ? torchFlicker(s.seed, t)
+          : s.kind === 'portal'
+            ? 0.94 + 0.06 * Math.sin(t * 1.7 + s.seed)
+            : s.kind === 'chandelier'
+              ? soulFlicker(s.seed, t)
+              : lanternFlicker(s.seed, t)
       if (s.local && s.lantern) s.pos.copy(s.local).applyMatrix4(pivotMatrix(s.lantern, t, this.m))
 
       if (s.kind === 'portal') this.portalLevels.value[s.owner] = s.level
@@ -246,6 +256,8 @@ class LightField {
       fragmentHead?: string
       uniforms?: Record<string, { value: unknown }>
       env?: number
+      /** Scales every field light on this material (1 = physical). */
+      fieldGain?: number
     } = {},
   ): M {
     const u = this.uniforms
@@ -279,14 +291,14 @@ class LightField {
           ${opts.fragmentHead ?? ''}`,
         )
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\n${opts.fragment ?? ''}`)
-        .replace('#include <lights_fragment_end>', `${FIELD_GLSL}\n#include <lights_fragment_end>`)
+        .replace('#include <lights_fragment_end>', `${fieldGlsl(opts.fieldGain ?? 1)}\n#include <lights_fragment_end>`)
     }
-    material.customProgramCacheKey = () => `lightfield:${opts.key ?? ''}`
+    material.customProgramCacheKey = () => `lightfield:${opts.key ?? ''}:${opts.fieldGain ?? 1}`
     return material
   }
 }
 
-const FIELD_GLSL = /* glsl */ `
+const fieldGlsl = (gain: number) => /* glsl */ `
 {
   const ivec3 lfDims = ivec3(${GRID_DIMS[0]}, ${GRID_DIMS[1]}, ${GRID_DIMS[2]});
   ivec3 lfC = clamp(ivec3(floor((vLfWorld - lfMin) / lfCell)), ivec3(0), lfDims - 1);
@@ -308,7 +320,7 @@ const FIELD_GLSL = /* glsl */ `
       float d = sqrt(d2);
       IncidentLight lfL;
       lfL.direction = normalize((viewMatrix * vec4(toL, 0.0)).xyz);
-      lfL.color = lfCol.rgb * getDistanceAttenuation(d, lfPR.w, 2.0);
+      lfL.color = lfCol.rgb * (getDistanceAttenuation(d, lfPR.w, 2.0) * ${gain.toFixed(4)});
       lfL.visible = true;
       RE_Direct(lfL, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight);
     }

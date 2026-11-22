@@ -51,9 +51,23 @@ export interface PortalInfo {
   normal: V3
   width: number
   height: number
-  /** Where the flint and steel waits for this portal. */
-  holder: { kind: 'chest' | 'itemFrame'; position: V3; normal: V3 }
+  /**
+   * Where this portal's flint and steel can wait (config/items.ts picks one):
+   *  • itemFrame: centre of the frame's back, flat on the recess back wall in the free cell on the
+   *    far side of the portal frame, at eye level (visible from the aisle while approaching);
+   *  • chest: on the recess floor in the free cell on the near side.
+   */
+  holders: { itemFrame: Placement; chest: Placement }
 }
+
+export interface Placement {
+  position: V3
+  /** Unit normal pointing into the hall. */
+  normal: V3
+}
+
+/** Item-frame centre height: the glide camera's eye level. */
+export const ITEM_FRAME_Y = 2.1
 
 export interface TorchInfo {
   id: number
@@ -214,7 +228,6 @@ export function buildHall(): HallLayout {
         for (let y = 0; y <= 5; y++) for (let z = fz1; z <= fz0; z++) frameOwner.set(cellKey(s * (W + 2), y, z), portals.length)
 
         const cz = pz - 5
-        const holderKind = portals.length % 2 === 0 ? 'chest' : 'itemFrame'
         portals.push({
           id: portals.length,
           color,
@@ -224,12 +237,10 @@ export function buildHall(): HallLayout {
           normal: [-s, 0, 0],
           width: 3,
           height: 4,
-          holder:
-            holderKind === 'chest'
-              ? // on the recess floor, beside the frame, lid facing the hall
-                { kind: 'chest', position: [s * (W + 1), 0, z0], normal: [-s, 0, 0] }
-              : // on the back wall beside the frame, at chest height
-                { kind: 'itemFrame', position: [s * (W + 1.5 - 0.03), 1.9, z0], normal: [-s, 0, 0] },
+          holders: {
+            itemFrame: { position: [s * (W + 1.5), ITEM_FRAME_Y, z1], normal: [-s, 0, 0] },
+            chest: { position: [s * (W + 1), 0, z0], normal: [-s, 0, 0] },
+          },
         })
       } else {
         // Beyond the portals the rhythm continues with shallow blind arches into the fog.

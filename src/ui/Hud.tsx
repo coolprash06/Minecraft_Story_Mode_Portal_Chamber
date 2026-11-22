@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { gpuStats } from '../scene/GpuTimer'
 import { useApp } from '../state/store'
+import { Hotbar } from './Hotbar'
+import { Prompt, Toasts } from './Prompt'
 
-/** HUD: title, mode badge and the controls hint. */
+/** HUD: title, mode badge, controls hint, hover prompt, messages and the hotbar. */
 export function Hud() {
   const mode = useApp((s) => s.mode)
   return (
@@ -15,9 +17,15 @@ export function Hud() {
           {mode === 'glide' ? 'GLIDE' : 'FREE ROAM'}
         </span>
       </div>
-      <p className="absolute inset-x-0 bottom-5 px-4 text-center font-term text-lg tracking-wider text-[#e9e6f2]/75 sm:text-xl" style={{ textShadow: '2px 2px 0 #000' }}>
-        Scroll · W/S to glide &nbsp;·&nbsp; drag · A/D to look around
+      <p
+        className="absolute inset-x-0 px-4 text-center font-term text-lg tracking-wider text-[#e9e6f2]/60 sm:text-xl"
+        style={{ textShadow: '2px 2px 0 #000', bottom: 'calc(clamp(40px, 3.3vw, 58px) + 46px)' }}
+      >
+        Scroll · W/S to glide &nbsp;·&nbsp; drag · A/D to look around &nbsp;·&nbsp; click to interact · 1–9 hold
       </p>
+      <Toasts />
+      <Hotbar />
+      <Prompt />
       <Perf />
     </div>
   )

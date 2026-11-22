@@ -75,6 +75,9 @@ export function Lighting() {
       camera.getWorldDirection(camDir)
       const scored: { s: LightSource; score: number }[] = []
       for (const s of lightField.sources) {
+        // Soul chandeliers stay field-only: soft overhead light needs no shadows, and their gold
+        // takes a reduced field share (materials.ts) that a real pool light wouldn't respect.
+        if (s.kind === 'chandelier') continue
         const e = lightField.strength(s)
         if (e < 0.05 * s.intensity) continue
         to.copy(s.pos).sub(camera.position)

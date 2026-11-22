@@ -104,19 +104,48 @@ export function chandelier() {
     v.set(i, -12, e, gold(i, 1, e), SLOT.metal)
     v.set(e, -12, i, gold(e, 1, i), SLOT.metal)
   }
-  // arm-end lanterns (4 × 6 px) hanging just under each arm tip
-  const GLOW = ['#ffe6a8', '#ffcf7a', '#ffbf62']
-  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    const cx = dx * 12 - (dx < 0 ? 1 : 0)
-    const cz = dz * 12 - (dz < 0 ? 1 : 0)
-    const ox = cx - 1 - (dx === 0 ? 0 : 0)
-    const oz = cz - 1
-    v.box(ox - 1, -14, oz - 1, ox + 3, -13, oz + 3, gold, SLOT.metal)
-    v.box(ox, -19, oz, ox + 2, -14, oz + 2, (x, y, z) => pick(GLOW, x, y, z, 7), SLOT.glow)
-    for (const [px, pz] of [[ox - 1, oz - 1], [ox + 2, oz - 1], [ox - 1, oz + 2], [ox + 2, oz + 2]]) v.box(px, -19, pz, px + 1, -14, pz + 1, gold, SLOT.metal)
-    v.box(ox - 1, -20, oz - 1, ox + 3, -19, oz + 3, gold, SLOT.metal)
-  }
+  // arm-end soul lanterns: a dark iron cage (6 × 6 × 11 px) hung from a gold collar under each arm
+  // tip. The glow-slot voxels (panes + flame) are drawn with the animated soul material
+  // (Hanging.tsx), which keys its flicker off each voxel's brightness: glass stays steady.
+  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) soulCage(v, dx * SOUL_CAGE.arm, dz * SOUL_CAGE.arm, gold, dx + 2 * dz)
   return v
+}
+
+/** Soul-lantern cage geometry (px, chandelier space): centre on the voxel grid, body rows. */
+export const SOUL_CAGE = { arm: 12, top: -15, bottom: -21 } as const
+
+/**
+ * Soul-fire palette: near-white cyan core → cyan → deep blue edges, and dark tinted glass. The
+ * panes carry the flame picture (an opaque voxel pane can't show what's behind it).
+ */
+const SOUL = { C: '#d4fbff', B: '#86e8ff', M: '#34bdf0', E: '#1d5fd0', G: '#0b2c4c' } as const
+/** 4 × 6 pane, bottom row first: a flame rising off the cage floor, licking up one side. */
+const SOUL_PANE = ['ECCM', 'EBCE', 'EMBE', 'GEMG', 'GGEG', 'GGGG'] as const
+
+function soulCage(v: VoxelSet, X: number, Z: number, gold: (x: number, y: number, z: number) => Col, variant: number) {
+  const iron = (x: number, y: number, z: number) => pick(IRON, x, y, z, 9)
+  const { top, bottom } = SOUL_CAGE
+  const x0 = X - 3
+  const z0 = Z - 3
+  v.box(X - 1, -13, Z - 1, X + 1, -12, Z + 1, gold, SLOT.metal) // collar under the arm
+  v.box(x0 + 1, top + 1, z0 + 1, x0 + 5, top + 2, z0 + 5, iron, SLOT.metal) // cap
+  v.box(x0, top, z0, x0 + 6, top + 1, z0 + 6, iron, SLOT.metal) // top plate
+  // flame fills the inside (hidden behind the panes; keeps the cage solid, no see-through gaps)
+  v.box(x0 + 1, bottom, z0 + 1, x0 + 5, top, z0 + 5, SOUL.M, SLOT.glow)
+  // panes: four faces, each drawn from the outside looking in (u runs left → right)
+  for (let face = 0; face < 4; face++) {
+    const flip = (face + variant) % 2 === 1
+    for (let r = 0; r < top - bottom; r++)
+      for (let u = 0; u < 4; u++) {
+        const ch = SOUL_PANE[r][flip ? 3 - u : u] as keyof typeof SOUL
+        const y = bottom + r
+        const [x, z] = face === 0 ? [x0 + 1 + u, z0 + 5] : face === 1 ? [x0 + 4 - u, z0] : face === 2 ? [x0 + 5, z0 + 4 - u] : [x0, z0 + 1 + u]
+        v.set(x, y, z, SOUL[ch], SLOT.glow)
+      }
+  }
+  for (const px of [x0, x0 + 5]) for (const pz of [z0, z0 + 5]) v.box(px, bottom, pz, px + 1, top, pz + 1, iron, SLOT.metal) // corner posts
+  v.box(x0, bottom - 1, z0, x0 + 6, bottom, z0 + 6, iron, SLOT.metal) // floor plate
+  v.box(X - 1, bottom - 2, Z - 1, X + 1, bottom - 1, Z + 1, '#2d3036', SLOT.metal) // foot
 }
 
 /* ───────────────────────────── armour stand ───────────────────────────── */
@@ -281,5 +310,42 @@ export function portraitFrame() {
     v.box(px, H + 2, 0, px + 1, H + 2 + tall, 2, '#e0b13e', SLOT.metal)
   for (const px of [-7, -1, 0, 6]) v.set(px, H + 2 + (px === -1 || px === 0 ? 4 : 3), 0, '#ffe58f', SLOT.metal)
   v.box(-1, H, 2, 1, H + 2, 3, '#1fc8e0', SLOT.gem)
+  return v
+}
+
+/* ───────────────────────────── item frame ───────────────────────────── */
+
+export const ITEM_FRAME_SCALE = 1 / 14
+/** Outer size and depth in px (12 × 12 px ≈ 0.86 m square: reads from the aisle, fits its 1-block slot). */
+export const ITEM_FRAME_PX = { size: 12, depth: 2 } as const
+
+/**
+ * Wall item frame: a mitred oak moulding (2 px deep, lit top/left edges, darker bottom/right) around
+ * a dark leather backing (1 px, recessed). Back on the wall at z = 0, front +Z, centred on x/y = 0.
+ */
+export function itemFrame() {
+  const v = new VoxelSet()
+  const h = ITEM_FRAME_PX.size / 2
+  const OAK = ['#9a6b3c', '#8c5f33', '#a6764a']
+  const LEATHER = ['#2a1d17', '#241812', '#30211a']
+  for (let y = -h; y < h; y++)
+    for (let x = -h; x < h; x++) {
+      const ring = x === -h || x === h - 1 || y === -h || y === h - 1
+      if (!ring) {
+        // backing, with a faint diamond stitch
+        const stitch = (Math.abs(x + 0.5) + Math.abs(y + 0.5)) % 4 === 1
+        v.set(x, y, 0, stitch ? '#3a2a20' : pick(LEATHER, x, y, 0, 31))
+        continue
+      }
+      const lit = y === h - 1 || x === -h // top and left catch the light
+      const corner = (x === -h || x === h - 1) && (y === -h || y === h - 1)
+      for (let z = 0; z < ITEM_FRAME_PX.depth; z++) {
+        let c = pick(OAK, x, y, z, 32)
+        if (z === 1 && lit) c = '#b8875a'
+        if (z === 1 && !lit) c = '#7a5230'
+        if (corner) c = '#6a4527' // mitre joints
+        v.set(x, y, z, c)
+      }
+    }
   return v
 }

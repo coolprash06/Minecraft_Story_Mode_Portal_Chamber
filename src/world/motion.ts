@@ -43,6 +43,11 @@ export function torchFlicker(seed: number, t: number) {
   )
 }
 
+/** Soul-fire breathing (~0.97..1.0): slower and steadier still than a lantern. */
+export function soulFlicker(seed: number, t: number) {
+  return 0.985 + 0.009 * Math.sin(t * 1.35 + seed) + 0.005 * Math.sin(t * 4.1 + seed * 1.7)
+}
+
 /** Lantern breathing (~0.95..1.0): slow and steady. */
 export function lanternFlicker(seed: number, t: number) {
   return 0.975 + 0.018 * Math.sin(t * 2.3 + seed) + 0.008 * Math.sin(t * 7.9 + seed * 2.0)

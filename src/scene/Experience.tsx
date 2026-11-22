@@ -4,6 +4,7 @@ import gsap from 'gsap'
 import { ACESFilmicToneMapping, HalfFloatType, SRGBColorSpace, WebGLRenderTarget, type PerspectiveCamera } from 'three'
 import { COLORS, FOG_DENSITY } from '../config/theme'
 import { GlideRig } from '../controls/GlideRig'
+import { Interaction } from '../controls/Interaction'
 import { appStore, useApp } from '../state/store'
 import { hall } from '../world/layout'
 import { Atmosphere } from './Atmosphere'
@@ -14,7 +15,10 @@ import { Finale } from './Finale'
 import { Flames } from './Flames'
 import { GPU_TIMING, GpuTimer } from './GpuTimer'
 import { Hanging } from './Hanging'
+import { HeldItem } from './HeldItem'
+import { ItemFrames } from './ItemFrames'
 import { Lighting } from './Lighting'
+import { PortalFx } from './PortalFx'
 import { Portals } from './Portals'
 import { Props } from './Props'
 
@@ -42,6 +46,8 @@ export const Experience = memo(function Experience() {
       <fogExp2 attach="fog" args={[COLORS.fog, FOG_DENSITY]} />
       <Lighting />
       <GlideRig />
+      {/* after the rig: picks against this frame's camera */}
+      <Interaction />
       <Corridor />
       <Carpet />
       <Props />
@@ -49,6 +55,9 @@ export const Experience = memo(function Experience() {
       <Banners />
       <Finale />
       <Portals />
+      <PortalFx />
+      <ItemFrames />
+      <HeldItem />
       <Flames />
       <Atmosphere />
       <Effects />

@@ -2,8 +2,9 @@
  * Portal surfaces and their particles. All 18 share one instanced draw:
  *  • the surface is an animated swirl of layered noise in the portal's colour, quantised to the
  *    block grid (16 px per block) and to a few tones, so it reads as moving pixel art;
- *  • `level` (0..1, from the light field's fade) dissolves the surface in from the frame edges,
- *    so lighting a portal (phase 4) and ?lit=all use the same path;
+ *  • `fill` (0..1, portalFx) reveals the surface from the bottom of the opening up, behind a
+ *    bright ragged front; lighting a portal tweens it over ~1.5 s, a portal lit at load starts full.
+ *    `level` (the light field's fade) eases the brightness in alongside;
  *  • soft square motes drift out of each lit portal into the hall and fade.
  */
 import { useMemo, useRef } from 'react'
@@ -25,6 +26,7 @@ import {
 import { PORTAL_COLORS } from '../config/portals'
 import { FOG_DENSITY } from '../config/theme'
 import { lightField } from '../gfx/lightField'
+import { portalFx } from '../gfx/portalFx'
 import { hall } from '../world/layout'
 
 const P = hall.portals.length
@@ -49,11 +51,11 @@ function surfaceMaterial() {
   return new ShaderMaterial({
     uniforms: { uTime: time, uFog: { value: FOG_DENSITY } },
     vertexShader: /* glsl */ `
-      attribute vec3 aColor; attribute float aLevel; attribute float aSeed;
+      attribute vec3 aColor; attribute float aLevel; attribute float aSeed; attribute float aFill;
       uniform float uFog;
-      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog;
+      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill;
       void main() {
-        vUv = uv; vColor = aColor; vLevel = aLevel; vSeed = aSeed;
+        vUv = uv; vColor = aColor; vLevel = aLevel; vSeed = aSeed; vFill = aFill;
         vec4 mv = viewMatrix * modelMatrix * instanceMatrix * vec4(position, 1.0);
         float f = uFog * -mv.z; vFog = exp(-f * f);
         gl_Position = projectionMatrix * mv;
@@ -61,19 +63,21 @@ function surfaceMaterial() {
     fragmentShader: /* glsl */ `
       ${NOISE}
       uniform float uTime;
-      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog;
+      varying vec2 vUv; varying vec3 vColor; varying float vLevel; varying float vSeed; varying float vFog; varying float vFill;
       void main() {
-        if (vLevel < 0.002) discard;
+        if (vFill < 0.002) discard;
         // 3 × 4 blocks → 48 × 64 pixels
         vec2 grid = vec2(48.0, 64.0);
         vec2 cell = floor(vUv * grid);
         vec2 uv = (cell + 0.5) / grid;
         vec2 p = (uv - 0.5) * vec2(3.0, 4.0);
 
-        // reveal: grows in from the frame edges as level rises
-        float edge = min(min(uv.x, 1.0 - uv.x) * 3.0, min(uv.y, 1.0 - uv.y) * 4.0);
-        float reveal = vLevel * 2.6 - edge + (hash12(cell + vSeed * 50.0) - 0.5) * 0.5;
+        // reveal: fills from the bottom up behind a ragged, flickering front (in opening heights)
+        float ragged = (vnoise(vec2(cell.x * 0.35, uTime * 3.0 + vSeed * 9.0)) - 0.5) * 0.09
+                     + (hash12(cell + floor(uTime * 12.0)) - 0.5) * 0.03;
+        float reveal = vFill * 1.12 - uv.y + ragged;
         if (reveal < 0.0) discard;
+        float lvl = vLevel * vLevel * (3.0 - 2.0 * vLevel);
 
         float t = uTime * 0.55 + vSeed * 20.0;
         // domain-warped logarithmic spiral: continuous arms that turn and drift, broken up by noise
@@ -94,9 +98,11 @@ function surfaceMaterial() {
         vec3 col = mix(deep, mid, smoothstep(0.1, 0.6, v));
         col = mix(col, hot, smoothstep(0.65, 1.0, v));
         col += mix(vColor, vec3(1.0), 0.5) * sparkle;
-        // bright rim where the surface is still forming
-        col += vColor * 2.0 * (1.0 - smoothstep(0.0, 0.35, reveal)) * (1.0 - vLevel * 0.6);
-        float intensity = 1.35 * (0.88 + 0.12 * sin(uTime * 1.7 + vSeed * 9.0));
+        // bright front where the surface is still climbing (gone once full)
+        float forming = 1.0 - smoothstep(0.9, 1.0, vFill);
+        col += mix(vColor, vec3(1.0), 0.45) * 2.6 * (1.0 - smoothstep(0.0, 0.07, reveal)) * forming;
+        col += vColor * 0.6 * (1.0 - smoothstep(0.0, 0.3, reveal)) * forming;
+        float intensity = 1.35 * (0.88 + 0.12 * sin(uTime * 1.7 + vSeed * 9.0)) * mix(0.55, 1.0, lvl);
         gl_FragColor = vec4(col * intensity * vFog, 1.0);
       }`,
     toneMapped: false,
@@ -171,7 +177,7 @@ function moteMaterial() {
 
 export function Portals() {
   const ref = useRef<InstancedMesh>(null)
-  const { geo, mat, levelAttr, motes, moteMat } = useMemo(() => {
+  const { geo, mat, levelAttr, fillAttr, motes, moteMat } = useMemo(() => {
     const geo = new PlaneGeometry(1, 1)
     const color = new Float32Array(P * 3)
     const seed = new Float32Array(P)
@@ -181,10 +187,12 @@ export function Portals() {
       seed[i] = (i * 0.37) % 1
     })
     const levelAttr = new InstancedBufferAttribute(new Float32Array(P), 1)
+    const fillAttr = new InstancedBufferAttribute(new Float32Array(P), 1)
     geo.setAttribute('aColor', new InstancedBufferAttribute(color, 3))
     geo.setAttribute('aSeed', new InstancedBufferAttribute(seed, 1))
     geo.setAttribute('aLevel', levelAttr)
-    return { geo, mat: surfaceMaterial(), levelAttr, motes: moteGeometry(), moteMat: moteMaterial() }
+    geo.setAttribute('aFill', fillAttr)
+    return { geo, mat: surfaceMaterial(), levelAttr, fillAttr, motes: moteGeometry(), moteMat: moteMaterial() }
   }, [])
 
   const placed = useRef(false)
@@ -204,8 +212,10 @@ export function Portals() {
     for (let i = 0; i < P; i++) {
       const s = lightField.sources[sourceOf[i]]
       levelAttr.array[i] = s.level
+      fillAttr.array[i] = portalFx.fill[i]
     }
     levelAttr.needsUpdate = true
+    fillAttr.needsUpdate = true
     pointScale.value = gl.domElement.height / (2 * Math.tan((((camera as PerspectiveCamera).fov ?? 60) * Math.PI) / 360))
   })
 

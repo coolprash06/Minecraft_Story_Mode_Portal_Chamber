@@ -11,9 +11,12 @@
  *    damped. A D ← → also turn. When not dragging, the gaze leans gently towards the cursor.
  *  • ?z=-30 starts at that z, ?yaw=180 / ?pitch=10 (degrees) set the initial view,
  *    ?bench=N glides the whole rail in N seconds (for FPS measurement).
+ *  • cameraFx (portal ignition) adds a short shake and an FOV pulse on top.
  */
 import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
+import type { PerspectiveCamera } from 'three'
+import { cameraFx } from '../gfx/portalFx'
 import { clamp, damp } from '../lib/random'
 import { appStore } from '../state/store'
 import { hall } from '../world/layout'
@@ -66,6 +69,7 @@ export function GlideRig() {
     fs: -Math.cos(startYaw) > 0 ? 1 : -1,
     lastTouchY: null as number | null,
     benchT: -1,
+    baseFov: null as number | null,
   })
 
   useEffect(() => {
@@ -190,7 +194,20 @@ export function GlideRig() {
     const endTilt = END_TILT * endBlend * endBlend * (3 - 2 * endBlend) * Math.max(0, Math.cos(st.yaw))
     const pitch = clamp(st.pitch - st.lean.y * 0.1 * st.lean.w + 0.02 + endTilt + Math.sin(t * 0.29) * 0.005, -PITCH_LIMIT - 0.1, PITCH_LIMIT + 0.1)
     const roll = Math.sin(t * 0.31) * 0.004 - st.lean.x * 0.01 * st.lean.w
-    camera.rotation.set(pitch, yaw, roll, 'YXZ')
+    // effects: a decaying shake (layered sines, so it's smooth, not jittery) and an FOV pulse
+    const sh = cameraFx.shake
+    if (sh > 0.001) {
+      camera.position.x += (Math.sin(t * 41.3) * 0.6 + Math.sin(t * 73.1 + 1.7) * 0.4) * 0.028 * sh
+      camera.position.y += (Math.sin(t * 47.9 + 0.6) * 0.6 + Math.sin(t * 89.3) * 0.4) * 0.028 * sh
+    }
+    camera.rotation.set(pitch + Math.sin(t * 53.7) * 0.005 * sh, yaw + Math.sin(t * 38.9 + 2.1) * 0.005 * sh, roll + Math.sin(t * 29.3) * 0.006 * sh, 'YXZ')
+    const cam = camera as PerspectiveCamera
+    st.baseFov ??= cam.fov
+    const fov = st.baseFov + cameraFx.fov
+    if (Math.abs(cam.fov - fov) > 1e-4) {
+      cam.fov = fov
+      cam.updateProjectionMatrix()
+    }
 
     const progress = (zStart - st.z) / (zStart - zEnd)
     if (Math.abs(progress - appStore.get().glide) > 0.002) appStore.set({ glide: progress })

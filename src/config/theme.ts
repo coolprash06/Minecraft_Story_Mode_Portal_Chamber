@@ -7,6 +7,8 @@ export const COLORS = {
   ambientGround: '#120f14',
   torch: '#ffa04a',
   lantern: '#ffc982',
+  /** Soul fire in the ceiling chandeliers: the hall's one cool light. */
+  soul: '#4fd8ff',
   ui: '#e9e6f2',
   uiDim: '#9a96ad',
 } as const
