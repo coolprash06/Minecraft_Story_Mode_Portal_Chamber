@@ -13,3 +13,6 @@ function reduced() {
 }
 
 export const REDUCED_MOTION = reduced()
+
+/** Touch-first device (no mouse): Free Roam (pointer lock + keyboard) is not offered. */
+export const COARSE_POINTER = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false)

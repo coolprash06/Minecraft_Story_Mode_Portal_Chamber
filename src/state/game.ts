@@ -4,6 +4,7 @@
  */
 import { playSfx, setHum } from '../audio/sfx'
 import { flintById, HOTBAR_SLOTS } from '../config/items'
+import { COARSE_POINTER } from '../lib/device'
 import { PORTAL_COLORS } from '../config/portals'
 import { portalFx } from '../gfx/portalFx'
 import { hall } from '../world/layout'
@@ -127,7 +128,8 @@ export function landPickup(flintId: string, slot: number) {
 function strikePortal(portalId: number) {
   const s = appStore.get()
   if (isLit(s.litMask, portalId)) {
-    enterPortal(portalId, 'glide')
+    // Free Roam: you jump in yourself (the prompt says so); a click does nothing
+    if (s.mode === 'glide') enterPortal(portalId, 'glide')
     return
   }
   const flint = heldFlint()
@@ -200,6 +202,9 @@ export function arriveInDimension() {
 export function returnToCorridor() {
   const s = appStore.get()
   if (s.journey !== 'dimension' || !s.sceneReady) return
+  // Free Roam: the button's click is the gesture that re-locks the mouse (Esc can't; then the
+  // pause menu's Resume does it)
+  if (s.mode === 'free') requestFreeLock()
   playSfx('exitDimension')
   appStore.set({ journey: 'returning' })
   emitGame('return', { portalId: s.journeyPortal })
@@ -210,4 +215,33 @@ export function backInHall() {
   const s = appStore.get()
   if (s.journeyPortal >= 0) setHum(s.journeyPortal, 0.35, 0, 1.2)
   appStore.set({ journey: 'hall', journeyPortal: -1, veil: false })
+}
+
+/* ───────────────────────────── Free Roam ───────────────────────────── */
+
+/** Can the mode be switched right now? (in the hall, scene ready, not on a touch device) */
+export const canSwitchMode = () => {
+  const s = appStore.get()
+  return !COARSE_POINTER && s.sceneReady && s.journey === 'hall'
+}
+
+/** Glide ⇄ Free Roam. Call from a key / click handler: entering Free Roam takes the pointer lock. */
+export function setMode(mode: 'glide' | 'free') {
+  if (!canSwitchMode() || appStore.get().mode === mode) return
+  appStore.set({ mode, hover: null })
+  emitGame('mode', { mode })
+}
+
+export const toggleMode = () => setMode(appStore.get().mode === 'glide' ? 'free' : 'glide')
+
+/** Take the pointer lock for Free Roam (inside a user gesture). */
+export function requestFreeLock() {
+  if (appStore.get().mode !== 'free') return
+  emitGame('requestLock', {})
+}
+
+/** Pause menu: back to the entrance, still in Free Roam. */
+export function returnToEntrance() {
+  if (appStore.get().mode !== 'free' || appStore.get().journey !== 'hall') return
+  emitGame('toEntrance', {})
 }

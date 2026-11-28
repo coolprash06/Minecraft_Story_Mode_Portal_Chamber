@@ -4,6 +4,7 @@ import gsap from 'gsap'
 import { ACESFilmicToneMapping, HalfFloatType, SRGBColorSpace, WebGLRenderTarget, type PerspectiveCamera } from 'three'
 import { COLORS, FOG_DENSITY } from '../config/theme'
 import { EntryRig } from '../controls/EntryRig'
+import { FreeRig } from '../controls/FreeRig'
 import { BASE_FOV, GlideRig } from '../controls/GlideRig'
 import { Interaction } from '../controls/Interaction'
 import { OFF } from '../lib/debug'
@@ -55,6 +56,7 @@ export const Experience = memo(function Experience() {
       <Lighting />
       <GlideRig />
       <EntryRig />
+      <FreeRig />
       {/* after the rigs: picks against this frame's camera */}
       <Interaction />
       <Corridor />

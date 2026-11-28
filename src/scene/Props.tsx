@@ -54,9 +54,24 @@ const inPlane = (x: number, y: number, z: number, angle: number) => new Matrix4(
 /** The torch's local transform: lean the stick out from the wall (+X) by the tilt angle. */
 export const torchLean = () => new Matrix4().makeRotationZ(-TORCH.tilt)
 
-function buildStatic() {
-  const casters = new StaticBatch()
-  const fixtures = new StaticBatch()
+/** One placed prop: its model parts and world transform. Fixtures hold a light (never cast shadows). */
+export interface PropPlacement {
+  parts: MeshParts
+  m: Matrix4
+  fixture: boolean
+}
+
+let placements: PropPlacement[] | null = null
+
+/**
+ * Every static prop in the hall, placed (built once, shared by the meshes here and by the Free Roam
+ * colliders, which take each placement's bounds).
+ */
+export function propPlacements(): PropPlacement[] {
+  if (placements) return placements
+  const list: PropPlacement[] = []
+  const casters = { add: (parts: MeshParts, m: Matrix4) => list.push({ parts, m, fixture: false }) }
+  const fixtures = { add: (parts: MeshParts, m: Matrix4) => list.push({ parts, m, fixture: true }) }
 
   // torches: stick (leaning) + bracket on the wall
   const stick = torchStick().mesh(TORCH_SCALE, undefined, MERGE)
@@ -129,6 +144,13 @@ function buildStatic() {
   const frameBottom = pf.position[1] - (FRAME_OPENING.h / 2 + FRAME_OPENING.ring) * FRAME_SCALE
   casters.add(portraitFrame().mesh(FRAME_SCALE, undefined, MERGE), mat([pf.position[0], frameBottom, pf.position[2]], yawZ(pf.normal)))
 
+  return (placements = list)
+}
+
+function buildStatic() {
+  const casters = new StaticBatch()
+  const fixtures = new StaticBatch()
+  for (const p of propPlacements()) (p.fixture ? fixtures : casters).add(p.parts, p.m)
   return { casters: casters.build(), fixtures: fixtures.build() }
 }
 

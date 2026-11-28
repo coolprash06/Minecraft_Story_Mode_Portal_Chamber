@@ -65,17 +65,45 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - **Draw order** (about −0.8 ms). The corridor (walls, floor, ceiling) draws after every other opaque mesh, so early-z skips the wall and floor pixels hidden behind props and carpet. Nothing is coplanar, so the image is identical.
   - **Props mesh** (≈0 ms measured). Static props merge coplanar same-colour faces (208k → 100k triangles, identical pixels). It's kept because it costs nothing and shrinks shadow-map re-renders. Props were already merged per chunk (109 draw calls per frame in total), so instancing was not needed.
 
+- **Phase 3: Free Roam (2026-11-28).**
+  - **Mode switch:** F, or the mode badge (it's a button), toggles Glide ⇄ Free Roam. Glide is the default on every load and the mode is never saved. Not offered on touch devices.
+    - **Into Free Roam:** starts from the current camera pose (feet dropped to the floor, same yaw and pitch) and blends from the rail pose over 0.45 s.
+    - **Back to Glide:** goes to the nearest rail point with GlideRig's hand-back blend.
+  - **Movement:** WASD, fully camera-relative, with pointer-lock look (360°, pitch ±89°).
+    - Walk 4.3 m/s, Shift sprints at 5.6 m/s with a +5° FOV kick that eases in and out.
+    - SPACE jumps (apex about 1.2 m, buffered; holding it keeps hopping) with gravity.
+    - Small ledges (carpet, runners, mats) are stepped up and down smoothly.
+  - **Collision:** swept-box against the voxel grid, plus a box per static prop from its real model bounds, plus thin carpet, runner and mat boxes (surface `carpet`).
+  - **Portals:**
+    - Unlit portal openings are blocked.
+    - A lit opening is a trigger above the 1-block sill, so only a jump gets in (`enterPortal(id, 'free')`, crossing only).
+    - Clicking a lit portal in Free Roam does nothing; the prompt says "Jump in to enter".
+    - Coming back from a dimension entered in Free Roam puts you on that portal's mat facing the hall. The Return button's click re-locks the mouse.
+  - **Interaction:** a crosshair, and E or left-click interacts with what it targets (reach 6 m; Glide keeps 20 m). The prompt sits under the crosshair; toasts are the same as in Glide. 1–9 still select slots.
+  - **Pause menu:** Esc releases the lock and opens it, with Resume, Controls, Switch to Glide and Return to Entrance. If the browser refuses a quick re-lock, it says "One moment…".
+  - **Head bob and sounds:**
+    - Head bob, a landing dip and step smoothing. With reduced motion: no bob, dip, FOV kick or blend.
+    - Sound hooks: `step` (with `surface`), `jump`, `land` (with `impact`).
+  - **HUD:** the badge shows FREE ROAM and the hints change with the mode.
+  - **Performance:** 6 worst-angle poses at ratio 1.5, all lit (median / p90):
+    - aisle 11.2 / 13.3 ms (the same pose as the hall baseline);
+    - nose to a lit portal 9.2 / 11.6;
+    - in a recess looking back 10.0 / 11.7;
+    - at an armour stand under a torch 9.0 / 10.9;
+    - straight up at the chandeliers 10.3 / 12.3;
+    - finale 9.8 / 11.6.
+    - Free Roam adds no GPU work, and the controller costs about 3 µs of CPU per frame.
+
 ## Remaining phases
 
 0. **Perf reserve (for Mission 1, not applied).** Use only if a later phase measures over budget, and ask first:
    1. Render ratio 1.5 → 1.25 on High: about −3.0 ms. Slightly softer image on the 2560 panel.
    2. Shadow pool 2 → 1 on High: about −2.4 ms with PCF, less now. Only the single most important light casts shadows.
    - Smaller items: drop SMAA (−1.1 ms, jaggier edges) and cheaper bloom (about −0.3 ms).
-3. **Free Roam:** F toggles it. WASD with pointer-lock 360° look, Shift to sprint, SPACE to jump, collision, a crosshair and an Esc pause menu.
 4. **Portal mechanic for the other 17 portals.** Add a `FLINTS` entry for each.
 5. **Sound:** synthesised WebAudio sounds plugged into `setSfxPlayer`, plus a mute toggle.
 6. **Warp and dimensions.**
-7. **Mission 1 – Pirates in the Caribbean (portal 0's dimension):** real 3D ship world, 6 pirates, emerald trading, hostility, combat, rescuing Natalie, pearl reward. Spec in `docs/mission-1-pirates.md`. Needs Free Roam (Phase 3) first.
+7. **Mission 1 – Pirates in the Caribbean (portal 0's dimension):** real 3D ship world, 6 pirates, emerald trading, hostility, combat, rescuing Natalie, pearl reward. Spec in `docs/mission-1-pirates.md`. Reuse `src/player/` for the player: give it the ship's own `CollisionWorld` (its voxel grid `solid`, extra colliders and triggers).
 8. **Extras.**
 9. **Polish and a production build.**
 
@@ -84,7 +112,10 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 | Flag | Effect |
 |---|---|
 | `?debug` | FPS, GPU timer, the render size and actual pixel ratio, sfx console logs |
-| `?bench=N` | Glides the whole rail in N s, then puts `BENCH` stats in the tab title. Add `&fixed` to hold the start pose (`?z`, `?yaw`, `?pitch`) with no sway, for A/B runs |
+| `?bench=N` | Glides the whole rail in N s, then puts `BENCH` stats in the tab title. Add `&fixed` to hold the start pose with no sway, for A/B runs. With `fixed`, `?x`, `?y` (eye height), `?z` and `?pitch` (±89°) are unclamped, so Free Roam angles can be measured |
+| `?mode=free` | Starts in Free Roam, behind the "Click to play" menu. `?x` `?z` `?yaw` `?pitch` set the start (default: the entrance) |
+| `?noclip` | Free Roam flies with no collision (SPACE up, Shift faster). `?y` sets the eye height |
+| `?nolock` | Simulates the pointer lock (automated tests: headless browsers refuse it). Esc still pauses. With `?debug`, `window.__free` exposes the player and the store |
 | `?dpr=N` | Renders at exactly this pixel ratio, ignoring the quality cap (measurement only) |
 | `?lit=all` or `?lit=0,3` | Lights those portals (never saved) |
 | `?z=-30` `?yaw=180` `?pitch=10` | Start pose (degrees) |
@@ -141,8 +172,14 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - `showcase/`
   - `PirateShowcase.tsx`: the `?showcase=pirates` page (its Canvas, lights, turntable and pixel UI).
   - `stage.ts`: the stage voxels (brick room, plinth, banners, torches).
+- `player/`: the reusable first-person controller (no React, R3F or hall imports; Mission 1 reuses it).
+  - `PlayerController.ts`: movement, jump and gravity, step-up and step-down, footsteps, and `viewPose()` (bob, landing dip, step smoothing, sprint FOV). All tunables are in `PLAYER`.
+  - `collision.ts`: `CollisionWorld` (`solid(x, y, z)` in the VoxelGrid cell convention, `colliders` with an optional `surface` and `active()`, and `triggers`). Swept movement one axis at a time.
+  - `input.ts`: `FirstPersonInput` (keys, pointer lock and look deltas; `onChange(locked, ours)`).
+- `world/hallColliders.ts`: `buildHallWorld(hooks)` builds the hall's CollisionWorld from the layout and `propPlacements()`. Lit state and portal entry come in as callbacks.
 - `controls/`
   - `GlideRig.tsx`: the rail camera (exports `lookState`, and `glideControl.place` to hand control back with a blend).
+  - `FreeRig.tsx`: Free Roam in the hall: the mode switch, the pointer lock, E/click, footstep sounds, and `freeControl.place` (EntryRig's return).
   - `EntryRig.tsx`: the scripted portal-entry camera (walk, jump, cancel, return).
   - `Interaction.tsx`: hover picking, and click vs drag.
   - `interact.ts`: targets, ray picking and the voxel walk.
@@ -157,6 +194,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `Prompt`: hover prompt and toasts.
   - `Loader`.
   - `Journey`: the veil, the warp screen and the dimension placeholder.
+  - `PauseMenu`: Free Roam's pause menu and the "Return to Entrance" fade. The crosshair lives in `Hud`.
 - `lib/device.ts`: `REDUCED_MOTION`, fixed for the session.
 - `lib/debug.ts`: `OFF`, the set of `?off=` switches.
 - `scene/heldPose.ts`: the held item's camera-space pose (shared by HeldItem and the return flight).
@@ -165,6 +203,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 
 - State lives in `appStore`. One-shot animations go through `emitGame` and `onGame`. Per-frame values live in plain arrays or objects (`portalFx`, `cameraFx`) that GSAP tweens and shaders read, so React never re-renders per frame.
 - Particle systems and effects are always mounted, idle and culled in the shader, so every program compiles behind the loading veil.
+- `store.mode` (never saved) and `store.freeLock` (`locked`, `pending`, `released` or `refused`) gate Free Roam input. The pause menu shows whenever the mode is free in the hall without the lock.
 - `store.journey` (`hall → entering → warp → dimension → returning → hall`) gates all input. It is never saved. The 3D frame pauses during `warp` and `dimension` while GSAP keeps running.
 - `PIRATES_PASSIVE` (`config/pirates.ts`, currently `true`): pirates never attack or turn hostile anywhere. All gameplay must ask `hostileAllowed()` before hostile behaviour. Only showcase buttons pass `manual = true`, which plays the hostile and attack animations regardless.
 - Portal ids run bay by bay from the entrance, left (−x) then right (+x). So 0 is bay 0 left, 1 is bay 0 right, and so on.

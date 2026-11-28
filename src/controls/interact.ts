@@ -2,7 +2,7 @@
  * Interaction targets and picking. Targets are boxes generated from the item config (one item frame
  * and one portal per enabled flint). A pick is a ray test against those boxes, then a voxel walk
  * through the hall grid so a pillar between you and a target blocks it. Glide picks under the
- * mouse; Free Roam (phase 3) will pass the screen centre instead.
+ * mouse; Free Roam picks at the screen centre (the crosshair) with a shorter reach.
  */
 import { Box3, Ray, Vector3, type Camera } from 'three'
 import { FLINTS } from '../config/items'
@@ -10,8 +10,9 @@ import type { Hover } from '../state/store'
 import { hall, type Placement } from '../world/layout'
 import { ITEM_FRAME_PX, ITEM_FRAME_SCALE } from '../scene/models'
 
-/** Farther than this (m) nothing is interactive. */
+/** Farther than this (m) nothing is interactive: Glide (from the rail) and Free Roam (walk up to it). */
 export const REACH = 20
+export const REACH_FREE = 6
 
 export interface Target {
   hover: NonNullable<Hover>
@@ -97,11 +98,11 @@ const hitPoint = new Vector3()
  * The nearest unblocked target under normalised device coords (x, y ∈ −1..1), or null.
  * `enabled(t)` filters targets (e.g. an emptied frame).
  */
-export function pick(camera: Camera, ndcX: number, ndcY: number, enabled: (t: Target) => boolean): Target | null {
+export function pick(camera: Camera, ndcX: number, ndcY: number, enabled: (t: Target) => boolean, reach = REACH): Target | null {
   ray.origin.setFromMatrixPosition(camera.matrixWorld)
   ray.direction.set(ndcX, ndcY, 0.5).unproject(camera).sub(ray.origin).normalize()
   let best: Target | null = null
-  let bestD = REACH
+  let bestD = reach
   for (const t of TARGETS) {
     if (!enabled(t)) continue
     if (!ray.intersectBox(t.box, hitPoint)) continue

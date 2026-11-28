@@ -9,10 +9,12 @@ export type SfxName =
   | 'fizzle'
   /** Clicked a lit portal: leaving the rail. */
   | 'enter'
-  /** One footstep on the runner. */
+  /** One footstep (the scripted walk, or Free Roam; `surface` says what's underfoot). */
   | 'step'
-  /** Take-off into the portal. */
+  /** Take-off: into the portal, or a Free Roam jump. */
   | 'jump'
+  /** Free Roam: feet back on the ground after a jump or a drop (`impact` = fall speed, m/s). */
+  | 'land'
   /** Rising rush of air (soft while walking, big on the jump). */
   | 'whoosh'
   /** Crossing the surface: the warp screen begins. */
@@ -33,6 +35,10 @@ export interface SfxDetail {
   at?: [number, number, number]
   /** Tint / pitch hint: the flint or portal colour. */
   color?: string
+  /** Footsteps / landing: the surface underfoot ('stone', 'carpet'). */
+  surface?: string
+  /** Landing: fall speed (m/s). */
+  impact?: number
 }
 
 type Player = (name: SfxName, detail: SfxDetail) => void

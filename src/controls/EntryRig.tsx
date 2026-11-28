@@ -11,14 +11,16 @@
  *     stretches (to 90° at most), the warp peaks and the bloom swells.
  *  4. Cross: the whiteout (in the portal's colour) is complete just before the camera reaches the
  *     surface, so the brick behind it is never seen; the DOM veil takes over (crossInto).
- * Free Roam (later) enters with from = 'free': only beat 4 runs, from wherever the player is.
+ * Free Roam enters with from = 'free' (the player jumped into the opening): only beat 4 runs, from
+ * wherever the player is.
  *
  * Reduced motion: no bob, no FOV stretch, no warp, no shake; the screen simply fades into the
  * dimension and the camera never moves.
  *
- * Return: the camera is put back on the rail in front of the portal (still lit) behind the veil;
- * the veil drops to a matching whiteout that clears as the field of view settles, then GlideRig
- * takes over (blending from this pose, so nothing jumps).
+ * Return: the camera is put back on the rail in front of the portal (still lit) behind the veil, or,
+ * when the portal was entered in Free Roam, on its mat facing the hall; the veil drops to a
+ * matching whiteout that clears as the field of view settles, then GlideRig (or FreeRig) takes
+ * over, blending from this pose, so nothing jumps.
  */
 import { useEffect } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
@@ -33,6 +35,8 @@ import { onGame } from '../state/events'
 import { backInHall, cancelEntry, crossInto } from '../state/game'
 import { appStore } from '../state/store'
 import { hall } from '../world/layout'
+import { PLAYER } from '../player/PlayerController'
+import { freeControl } from './FreeRig'
 import { BASE_FOV, faceYaw, glideControl, RAIL_Y } from './GlideRig'
 
 /** Eye height while walking (the rail floats a little higher). */
@@ -215,12 +219,18 @@ export function EntryRig() {
       resetFx()
       run.stage = 'return'
       const p = hall.portals[portalId]
-      Object.assign(pose, { x: 0, y: RAIL_Y, z: p.center[2], yaw: faceYaw(portalId), pitch: 0, roll: 0, fov: REDUCED_MOTION ? 0 : RETURN_FOV })
+      const free = appStore.get().mode === 'free'
+      if (free) {
+        // Free Roam: standing on the portal's mat, facing the hall
+        const mat = hall.decor.mats[portalId]
+        Object.assign(pose, { x: mat.position[0], y: mat.position[1] + 0.03 + PLAYER.eye, z: mat.position[2], yaw: faceYaw(portalId) + Math.PI, pitch: 0, roll: 0, fov: REDUCED_MOTION ? 0 : RETURN_FOV })
+      } else Object.assign(pose, { x: 0, y: RAIL_Y, z: p.center[2], yaw: faceYaw(portalId), pitch: 0, roll: 0, fov: REDUCED_MOTION ? 0 : RETURN_FOV })
       const done = () => {
         run.stage = 'idle'
         resetFx()
         apply()
-        glideControl.place(pose.z, pose.yaw)
+        if (free) freeControl.place(pose.x, pose.z, pose.yaw)
+        else glideControl.place(pose.z, pose.yaw)
         backInHall()
       }
       if (REDUCED_MOTION) {

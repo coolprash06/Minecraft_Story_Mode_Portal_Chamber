@@ -24,6 +24,12 @@ export function createStore<T extends object>(initial: T) {
 export type Mode = 'glide' | 'free'
 
 /**
+ * Free Roam pointer lock: 'locked' (playing), 'pending' (requested), 'released' (paused / not
+ * started), 'refused' (the browser said no: usually the ~1 s cool-down after Esc).
+ */
+export type FreeLock = 'locked' | 'pending' | 'released' | 'refused'
+
+/**
  * Decided once at startup and never changed mid-session (switching would rebuild the post chain
  * and shadow maps). Phones/tablets → low.
  */
@@ -48,7 +54,9 @@ export interface Toast {
 }
 
 export interface AppState {
+  /** Glide (default on every load, never saved) or Free Roam. */
   mode: Mode
+  freeLock: FreeLock
   quality: Quality
   /** Glide rail progress, 0 (entrance) .. 1 (far end). */
   glide: number
@@ -87,6 +95,8 @@ const portalParam = (k: string) => {
 export const DEBUG_AT = portalParam('at')
 /** ?dim=0: start on portal 0's dimension screen (Return puts you on the rail in front of it, lit). */
 export const DEBUG_DIM = portalParam('dim')
+/** ?mode=free: start in Free Roam (behind the "click to play" menu). Not on touch devices. */
+export const DEBUG_FREE = params.get('mode') === 'free' && !coarse
 
 /** ?lit=all lights every portal; ?lit=0,3,7 lights those. ?at / ?dim light their portal too. Debug only: never saved. */
 function debugLit(): number {
@@ -192,7 +202,8 @@ function applyGive(hotbar: (string | null)[]) {
 }
 
 export const appStore = createStore<AppState>({
-  mode: 'glide',
+  mode: DEBUG_FREE ? 'free' : 'glide',
+  freeLock: 'released',
   quality: initialQuality(),
   glide: 0,
   litMask: saved.lit | DEBUG_LIT,

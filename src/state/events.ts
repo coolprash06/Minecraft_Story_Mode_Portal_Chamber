@@ -22,8 +22,14 @@ export interface GameEvents {
   enter: { portalId: number; from: 'glide' | 'free' }
   /** Esc while walking: glide back onto the rail. */
   cancelEntry: { portalId: number }
-  /** "Return to Corridor": back on the rail in front of the portal. */
+  /** "Return to Corridor": back in the hall in front of the portal (on the rail, or on its mat in Free Roam). */
   return: { portalId: number }
+  /** Switch Glide ⇄ Free Roam (FreeRig / GlideRig hand the camera over). Fired inside the user gesture. */
+  mode: { mode: 'glide' | 'free' }
+  /** Free Roam: take the pointer lock (must be fired inside a user gesture). */
+  requestLock: Record<string, never>
+  /** Free Roam: back to the entrance (the pause menu's fade covers the jump). */
+  toEntrance: Record<string, never>
 }
 
 type Handler<K extends keyof GameEvents> = (e: GameEvents[K]) => void

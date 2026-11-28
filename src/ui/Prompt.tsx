@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { flintById } from '../config/items'
 import { pointer } from '../controls/Interaction'
 import { heldFlint, returnCheck } from '../state/game'
-import { isLit, useApp } from '../state/store'
+import { appStore, isLit, useApp } from '../state/store'
 import { textColor } from './Hotbar'
 
-/** The hover prompt, following the cursor (Free Roam will pin it under the crosshair). */
+/** The hover prompt: follows the cursor in Glide, sits under the crosshair in Free Roam. */
 export function Prompt() {
   const hover = useApp((s) => s.hover)
+  const free = useApp((s) => s.mode) === 'free'
   const litMask = useApp((s) => s.litMask)
   // re-read the held flint / frame state when the selection, hotbar or frames change
   useApp((s) => s.selected)
@@ -19,7 +20,9 @@ export function Prompt() {
     let raf = 0
     const place = () => {
       raf = 0
-      if (el.current) el.current.style.transform = `translate3d(${pointer.clientX + 18}px, ${pointer.clientY + 20}px, 0)`
+      if (!el.current) return
+      if (appStore.get().mode === 'free') el.current.style.transform = `translate3d(calc(50vw - 50%), calc(50vh + 22px), 0)`
+      else el.current.style.transform = `translate3d(${pointer.clientX + 18}px, ${pointer.clientY + 20}px, 0)`
     }
     const onMove = () => (raf ||= requestAnimationFrame(place))
     place()
@@ -28,7 +31,7 @@ export function Prompt() {
       window.removeEventListener('pointermove', onMove)
       cancelAnimationFrame(raf)
     }
-  }, [])
+  }, [free])
 
   let body: React.ReactNode = null
   if (hover?.kind === 'frame') {
@@ -47,7 +50,7 @@ export function Prompt() {
         ) : null
     }
   } else if (hover?.kind === 'portal') {
-    body = isLit(litMask, hover.portalId) ? 'Click to enter' : heldFlint() ? 'Click to light' : 'Unlit portal'
+    body = isLit(litMask, hover.portalId) ? (free ? 'Jump in to enter' : 'Click to enter') : heldFlint() ? 'Click to light' : 'Unlit portal'
   }
 
   return (

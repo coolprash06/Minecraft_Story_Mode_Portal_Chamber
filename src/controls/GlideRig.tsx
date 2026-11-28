@@ -57,8 +57,13 @@ const startZ = clamp(atPortal ? atPortal.center[2] : num('z', zStart), zEnd, zSt
 const startYaw = atPortal ? faceYaw(atPortal.id) : (num('yaw', 0) * Math.PI) / 180
 const startPitch = clamp((num('pitch', 0) * Math.PI) / 180, -PITCH_LIMIT, PITCH_LIMIT)
 const benchSeconds = num('bench', 0)
-/** ?bench=N&fixed: the camera holds the start pose (no glide, sway or lean), so A/B runs see the same pixels. */
+/**
+ * ?bench=N&fixed: the camera holds the start pose (no glide, sway or lean), so A/B runs see the same
+ * pixels. The pose may leave the rail: ?x ?y (eye height) ?z, unclamped (Free Roam's worst angles).
+ */
 const benchFixed = benchSeconds > 0 && params.has('fixed')
+const benchPos = new Vector3(num('x', 0), num('y', RAIL_Y), num('z', startZ))
+const benchPitch = (clamp(num('pitch', 0), -89, 89) * Math.PI) / 180
 
 /** True while a drag-look is in progress (so a click handler can ignore the release). */
 export const lookState = { dragging: false, moved: 0 }
@@ -200,8 +205,8 @@ export function GlideRig() {
     st.t += dt
 
     if (benchFixed) {
-      camera.position.set(0, RAIL_Y, startZ)
-      camera.rotation.set(startPitch, startYaw, 0, 'YXZ')
+      camera.position.copy(benchPos)
+      camera.rotation.set(benchPitch, startYaw, 0, 'YXZ')
       return
     }
     if (benchSeconds > 0 && appStore.get().sceneReady) {

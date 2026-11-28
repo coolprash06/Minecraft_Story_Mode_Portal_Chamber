@@ -1,6 +1,7 @@
 /**
- * Pointer interaction in Glide: hover picking every frame (after the rig has moved the camera) and
- * click-to-interact. A click only counts when the button went down and up on the canvas without
+ * Pointer interaction: hover picking every frame (after the rigs have moved the camera). Glide picks
+ * under the mouse and handles click-to-interact here; Free Roam picks under the crosshair (its
+ * click / E live in FreeRig). A click only counts when the button went down and up on the canvas without
  * moving more than a few pixels; anything longer is a drag-look (GlideRig) and never interacts.
  */
 import { useEffect } from 'react'
@@ -8,7 +9,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { interact, isFlying } from '../state/game'
 import { appStore, type Hover } from '../state/store'
 import { lookState } from './GlideRig'
-import { pick, type Target } from './interact'
+import { pick, REACH_FREE, type Target } from './interact'
 
 /** Max pointer travel (px) between down and up for a click. */
 const CLICK_SLOP = 5
@@ -72,7 +73,11 @@ export function Interaction() {
   useFrame(({ camera }) => {
     const s = appStore.get()
     let h: Hover = null
-    if (pointer.over && !lookState.dragging && s.sceneReady && s.mode === 'glide' && s.journey === 'hall') h = pick(camera, pointer.ndcX, pointer.ndcY, enabled)?.hover ?? null
+    if (s.sceneReady && s.journey === 'hall') {
+      // Glide: under the mouse. Free Roam: under the crosshair, while playing (not paused).
+      if (s.mode === 'glide' && pointer.over && !lookState.dragging) h = pick(camera, pointer.ndcX, pointer.ndcY, enabled)?.hover ?? null
+      else if (s.mode === 'free' && s.freeLock === 'locked') h = pick(camera, 0, 0, enabled, REACH_FREE)?.hover ?? null
+    }
     if (!sameHover(h, s.hover)) appStore.set({ hover: h })
     const cursor = h ? 'pointer' : ''
     if (gl.domElement.style.cursor !== cursor) gl.domElement.style.cursor = cursor
