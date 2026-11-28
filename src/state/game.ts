@@ -3,6 +3,7 @@
  * Pure state + events; every animation lives in the scene components that listen for the events.
  */
 import { playSfx, setHum } from '../audio/sfx'
+import { worldFor } from '../config/dimensions'
 import { flintById, HOTBAR_SLOTS } from '../config/items'
 import { COARSE_POINTER } from '../lib/device'
 import { PORTAL_COLORS } from '../config/portals'
@@ -181,21 +182,58 @@ export function cancelEntry() {
   emitGame('cancelEntry', { portalId: s.journeyPortal })
 }
 
-/** The camera has crossed the surface (or the reduced-motion fade is complete). */
+/**
+ * The camera has crossed the surface (or the reduced-motion fade is complete). A portal with a 3D
+ * world always goes through the warp screen, because it is also that world's loading screen.
+ */
 export function crossInto(direct = false) {
   const s = appStore.get()
   if (s.journey !== 'entering') return
   playSfx('warp', { color: PORTAL_COLORS[hall.portals[s.journeyPortal].color] })
   setHum(s.journeyPortal, 0, 1, 0.8)
-  appStore.set({ journey: direct ? 'dimension' : 'warp', veil: true, veilMs: direct ? 900 : 0 })
-  if (direct) playSfx('arrive')
+  const skipWarp = direct && !worldFor(s.journeyPortal)
+  appStore.set({ journey: skipWarp ? 'dimension' : 'warp', veil: true, veilMs: direct ? 900 : 0 })
+  if (skipWarp) playSfx('arrive')
 }
 
-/** The warp screen has finished. */
+/** The warp screen has finished (a placeholder dimension, or a 3D world that failed to load). */
 export function arriveInDimension() {
   if (appStore.get().journey !== 'warp') return
   playSfx('arrive')
   appStore.set({ journey: 'dimension' })
+}
+
+/* ───────────────────────────── 3D worlds ───────────────────────────── */
+
+/**
+ * The warp screen has finished and the world is ready: the world's canvas covers the hall, so the
+ * veil drops (the warp screen fades out over the world).
+ */
+export function arriveInWorld() {
+  const s = appStore.get()
+  if (s.journey !== 'warp' || !worldFor(s.journeyPortal)) return
+  playSfx('arrive')
+  appStore.set({ journey: 'world', veil: false, veilMs: 0, hover: null })
+}
+
+/**
+ * Leaving the world (its exit portal's crossing, or the pause menu's fade, is complete): the warp
+ * home begins behind the veil and the world unmounts. You always come home in Free Roam.
+ */
+export function leaveWorld() {
+  const s = appStore.get()
+  if (s.journey !== 'world') return
+  playSfx('warp', { color: PORTAL_COLORS[hall.portals[s.journeyPortal].color] })
+  appStore.set({ journey: 'leaving', veil: true, veilMs: 0, mode: 'free' })
+}
+
+/** The warp home has finished (and the hall is ready): on the portal's mat, facing the hall. */
+export function homeFromWorld() {
+  const s = appStore.get()
+  if (s.journey !== 'leaving' || !s.sceneReady) return
+  playSfx('exitDimension')
+  appStore.set({ journey: 'returning', mode: 'free' })
+  emitGame('return', { portalId: s.journeyPortal })
 }
 
 /** "Return to Corridor" (or Esc on the dimension screen). */
@@ -234,9 +272,10 @@ export function setMode(mode: 'glide' | 'free') {
 
 export const toggleMode = () => setMode(appStore.get().mode === 'glide' ? 'free' : 'glide')
 
-/** Take the pointer lock for Free Roam (inside a user gesture). */
+/** Take the pointer lock for Free Roam, or for a 3D world (inside a user gesture). */
 export function requestFreeLock() {
-  if (appStore.get().mode !== 'free') return
+  const s = appStore.get()
+  if (s.mode !== 'free' && s.journey !== 'world') return
   emitGame('requestLock', {})
 }
 

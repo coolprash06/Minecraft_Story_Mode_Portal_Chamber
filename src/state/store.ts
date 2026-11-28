@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { worldFor } from '../config/dimensions'
 import { DEV_FLINTS, FLINTS, flintById, HOTBAR_SLOTS } from '../config/items'
 
 /** Tiny external store (no extra dependency). Select primitives (or stable references) only. */
@@ -43,8 +44,11 @@ export type Hover = { kind: 'frame'; flintId: string } | { kind: 'portal'; porta
  *  hall → entering (walk + jump, or the reduced-motion fade) → warp (warp screen) → dimension
  *  → returning (back on the rail in front of the portal) → hall. Esc while walking cancels
  *  (entering → hall).
+ * A portal with a 3D world (config/dimensions `world`): the warp screen is also its loading screen,
+ *  warp → world (playing in it) → leaving (the warp home) → returning (on the portal's mat, in
+ *  Free Roam) → hall.
  */
-export type Journey = 'hall' | 'entering' | 'warp' | 'dimension' | 'returning'
+export type Journey = 'hall' | 'entering' | 'warp' | 'dimension' | 'world' | 'leaving' | 'returning'
 
 export interface Toast {
   text: string
@@ -93,8 +97,13 @@ const portalParam = (k: string) => {
 }
 /** ?at=0: start on the rail in front of portal 0, facing it, already lit (GlideRig reads it). */
 export const DEBUG_AT = portalParam('at')
-/** ?dim=0: start on portal 0's dimension screen (Return puts you on the rail in front of it, lit). */
+/**
+ * ?dim=0: start on portal 0's dimension: its 3D world (through the warp / loading screen) or its
+ * placeholder screen (Return puts you on the rail in front of it, lit).
+ */
 export const DEBUG_DIM = portalParam('dim')
+/** ?dim=N names a portal with a 3D world: the session boots straight into it. */
+export const BOOT_WORLD = DEBUG_DIM >= 0 && worldFor(DEBUG_DIM) !== null
 /** ?mode=free: start in Free Roam (behind the "click to play" menu). Not on touch devices. */
 export const DEBUG_FREE = params.get('mode') === 'free' && !coarse
 
@@ -214,7 +223,7 @@ export const appStore = createStore<AppState>({
   selected: saved.selected,
   hover: null,
   toast: null,
-  journey: DEBUG_DIM >= 0 ? 'dimension' : 'hall',
+  journey: BOOT_WORLD ? 'warp' : DEBUG_DIM >= 0 ? 'dimension' : 'hall',
   journeyPortal: DEBUG_DIM,
   veil: DEBUG_DIM >= 0,
   veilMs: 0,

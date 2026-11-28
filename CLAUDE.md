@@ -94,6 +94,31 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
     - finale 9.8 / 11.6.
     - Free Roam adds no GPU work, and the controller costs about 3 µs of CPU per frame.
 
+- **Mission 1, ship world stage 1 (2026-11-28).** Portal 0 now leads to a real 3D world (`src/ship/`, its own lazy chunk; the hall bundle grew by 3 KB).
+  - **Journey:** `hall → entering → warp → world → leaving → returning → hall`.
+    - The warp screen is the world's loader: its bar follows real progress, and it holds, naming the stage, until the world is ready (minimum 2.4 s).
+    - The tunnel is painted in a worker (OffscreenCanvas), so loading stalls never freeze it.
+    - The chunk is prefetched when the hall is idle.
+    - If loading fails, the placeholder screen appears.
+    - Touch devices keep the placeholder.
+  - **Leaving:** jump into the deck portal (dev exit) or pick "Return to Corridor" in the pause menu. Then the warp home (1.6 s); the ship unmounts and its context is released. You land on portal 0's mat in Free Roam, whatever mode you entered from.
+  - **Pointer lock:** the ship reuses the hall's `freeInput`, so a Free Roam entry keeps the lock in both directions. A Glide entry gets "Click to play".
+  - **World:** a bright tropical day.
+    - **Sky:** dithered bands, a square sun, flat voxel clouds.
+    - **Sea:** pixel waves, turquoise shallows and surf from the island's coast-distance map, glints, haze.
+    - **Island:** about 220 m away, 1 m voxels, palms, a cove facing the ship.
+    - **Deck:** a temporary flat deck at main-deck height (y 9) with bulwark colliders 1.6 m high.
+    - **Portal:** the blue deck portal (hall frame blocks and surface shader, double-sided).
+    - **Lighting:** one sun shadow map (PCF) and a hemisphere fill.
+  - **Performance** (ratio 1.5, median / p90):
+    - arrival 5.4 / 9.4 ms;
+    - towards the island 5.6 / 8.6;
+    - bow into the sun 6.6 / 8.7;
+    - looking out to sea 5.1 / 7.1;
+    - a 360° pan 7.3 / 9.8.
+    - The post stack is about 3.7 ms of that. Sea, sky, clouds and island together cost about 0.9 ms; each one alone is under the ±0.5 ms noise.
+    - At these loads the Arc downclocks, so small deltas are noise.
+
 ## Remaining phases
 
 0. **Perf reserve (for Mission 1, not applied).** Use only if a later phase measures over budget, and ask first:
@@ -103,7 +128,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 4. **Portal mechanic for the other 17 portals.** Add a `FLINTS` entry for each.
 5. **Sound:** synthesised WebAudio sounds plugged into `setSfxPlayer`, plus a mute toggle.
 6. **Warp and dimensions.**
-7. **Mission 1 – Pirates in the Caribbean (portal 0's dimension):** real 3D ship world, 6 pirates, emerald trading, hostility, combat, rescuing Natalie, pearl reward. Spec in `docs/mission-1-pirates.md`. Reuse `src/player/` for the player: give it the ship's own `CollisionWorld` (its voxel grid `solid`, extra colliders and triggers).
+7. **Mission 1 – Pirates in the Caribbean (portal 0's dimension):** real 3D ship world, 6 pirates, emerald trading, hostility, combat, rescuing Natalie, pearl reward, and the way home (the island's ruined portal and the mermaid's flint). Spec and build stages in `docs/mission-1-pirates.md`. Ship stage 1 is done; next is stage 2, the voxel ship. Reuse `src/player/` for the player: give it the ship's own `CollisionWorld` (its voxel grid `solid`, extra colliders and triggers).
 8. **Extras.**
 9. **Polish and a production build.**
 
@@ -120,7 +145,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 | `?lit=all` or `?lit=0,3` | Lights those portals (never saved) |
 | `?z=-30` `?yaw=180` `?pitch=10` | Start pose (degrees) |
 | `?quality=low\|high` | Overrides the device default |
-| `?off=a,b` | Measurement switches (see `lib/debug.ts`): `post`, `shadows`, `bloom`, `smaa`, `grain`, `surfaces`, `motes`, `portallight`, `poolportals`, and the components `hanging`, `flames`, `dust`, `props`, `banners`, `carpet`, `runners`, `frames`, `finale`, `portalfx`, `held` |
+| `?off=a,b` | Measurement switches (see `lib/debug.ts`): `post`, `shadows`, `bloom`, `smaa`, `grain`, `surfaces`, `motes`, `portallight`, `poolportals`, and the components `hanging`, `flames`, `dust`, `props`, `banners`, `carpet`, `runners`, `frames`, `finale`, `portalfx`, `held`. In the ship world: `sea`, `sky`, `clouds`, `island`, `deck` (plus `shadows`, `post`, `bloom`, `smaa`, `grain`) |
 | `?pool=N` | Overrides the shadow pool size |
 | `?shadowtype=basic\|percentage\|soft` | Shadow map type. The default is `basic` with the soft 4-tap filter. `percentage` is three's PCF (the look before perf pass 1) |
 | `?shadowfilter=three` | Basic's stock single hard tap (measurement only) |
@@ -130,7 +155,9 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 | `?reset` | Clears the saved session |
 | `?give=crimson` | Gives a dev-only flint (to test the mismatch path) |
 | `?at=0` | Starts on the rail in front of portal 0, facing it, lit (never saved) |
-| `?dim=0` | Starts on portal 0's dimension screen. Return leads to the rail in front of it, lit |
+| `?dim=N` | Starts in portal N's dimension: portal 0's 3D world (through the warp loader; leaving lands on its mat in Free Roam), or a placeholder screen (Return leads to the rail in front of it, lit) |
+| `?dim=0&bench=N` | Benches the ship world once the arrival settles: a full 360° pan in N s, or with `&fixed` the pose from `?x` `?y` (eye height) `?z` `?yaw` `?pitch` (default: the arrival spot) |
+| `?shipshadow=basic` | The ship's sun shadow uses Basic (hard) instead of PCF (measurement only) |
 | `?motion=reduce\|full` | Forces reduced motion on or off |
 | `?showcase=pirates` | Opens the pirate showcase instead of the hall. Extras: `&pirate=1..6` or an id (`bess`), `&anim=<idle\|walk\|trade\|hostile\|attack\|hurt\|death>`, `&still` (no turntable), `&turn=<deg>` |
 
@@ -139,7 +166,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - `config/`
   - `portals.ts`: colours and per-side order.
   - `items.ts`: `FLINTS`. An entry here enables a portal.
-  - `dimensions.ts`: the name, numeral, blurb and backdrop of each portal's dimension.
+  - `dimensions.ts`: the name, numeral, blurb and backdrop of each portal's dimension, and its 3D `world` (`worldFor(id)`, null on touch devices).
   - `pirates.ts`: Mission 1's crew (`PIRATES`, one entry per pirate), plus `PIRATES_PASSIVE` and `hostileAllowed()`.
   - `theme.ts`: scene and UI colours, fog.
 - `world/`
@@ -154,6 +181,8 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `voxel.ts`: the voxel model mesher. `mesh(scale, origin, merge)` can merge coplanar faces of the same colour.
   - `materials.ts`: shared materials.
   - `portalFx.ts`: per-portal fill, hover, flash and spiral arrays, `cameraFx` (shake, fov), `warpFx` (pulse, warp, flash) and `postFx` (bloom kick).
+  - `portalSurface.ts`: the portal surface shader (`surfaceMaterial({ time, fog, side })`), shared by the hall and the ship.
+  - `warpPaint.ts`: the warp tunnel painter (no DOM), used by the warp worker and its main-thread fallback.
   - `dimensionArt.ts`: 2D pixel art for the dimension side (the sunset sea with a ship, the warp tunnel).
   - `outline.ts`: hover outlines.
 - `scene/`
@@ -176,6 +205,20 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `PlayerController.ts`: movement, jump and gravity, step-up and step-down, footsteps, and `viewPose()` (bob, landing dip, step smoothing, sprint FOV). All tunables are in `PLAYER`.
   - `collision.ts`: `CollisionWorld` (`solid(x, y, z)` in the VoxelGrid cell convention, `colliders` with an optional `surface` and `active()`, and `triggers`). Swept movement one axis at a time.
   - `input.ts`: `FirstPersonInput` (keys, pointer lock and look deltas; `onChange(locked, ours)`).
+- `ship/`: Mission 1's world (lazy chunk; nothing here is imported by the hall).
+  - `ShipWorld.tsx`: the default export (mounted by App's `WorldHost`).
+    - The assets are built a slice per frame.
+    - Its own Canvas and frame driver; it starts after `compileAsync`.
+    - The HUD and the pause menu.
+  - `constants.ts`: layout (sea y 6, the deck at y 9, the portal at z 11, the spawn, the island), the sun and the sky and sea palettes.
+  - `ShipRig.tsx`: the player (shared `freeInput`, the reusable controller); the arrival, the exit crossing and the bench poses. `shipControl.exit('portal' | 'menu')`.
+  - `deck.ts`: the temporary deck's geometry and the ship's `CollisionWorld` (portal sill, opening trigger).
+  - `DeckPortal.tsx`: the frame, built with the hall's mesher and atlas, plus the glow, surface, motes and light pool.
+  - `Sea.tsx`, `Sky.tsx`, `island.ts` (voxels and the coast-distance map).
+  - `ShipScene.tsx`: lights, the deck and the island meshes.
+  - `ShipEffects.tsx`: the hall's post chain.
+  - `shipFx.ts`: per-frame fx levels and `shipStore`.
+  - `textures.ts`: plank textures.
 - `world/hallColliders.ts`: `buildHallWorld(hooks)` builds the hall's CollisionWorld from the layout and `propPlacements()`. Lit state and portal entry come in as callbacks.
 - `controls/`
   - `GlideRig.tsx`: the rail camera (exports `lookState`, and `glideControl.place` to hand control back with a blend).
@@ -187,13 +230,16 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `store.ts`: a tiny external store (`appStore`, `useApp`) plus sessionStorage persistence.
   - `game.ts`: gameplay rules (take, return, strike, ignite, fizzle, extinguish, enter, cancel, cross, arrive, return to corridor). `returnCheck` drives both the frame prompt and the click.
   - `events.ts`: one-shot events (`onGame`, `emitGame`).
+  - `world.ts`: the 3D worlds' lazy chunks (`loadShip`, `prefetchWorlds`) and `worldLoad` (progress, stage, ready, failed), which the warp screen reads.
 - `audio/sfx.ts`: `playSfx` hooks. This is a no-op until phase 5.
 - `ui/`
   - `Hud`: title, mode badge, hints, perf.
   - `Hotbar`.
   - `Prompt`: hover prompt and toasts.
   - `Loader`.
-  - `Journey`: the veil, the warp screen and the dimension placeholder.
+  - `Journey`: the veil, the warp screen (also a 3D world's loader, and the warp home) and the dimension placeholder.
+  - `warpWorker.ts`: paints the warp tunnel on an OffscreenCanvas.
+  - `Perf`: the `?debug` / `?bench` readout (the hall's and the ship's).
   - `PauseMenu`: Free Roam's pause menu and the "Return to Entrance" fade. The crosshair lives in `Hud`.
 - `lib/device.ts`: `REDUCED_MOTION`, fixed for the session.
 - `lib/debug.ts`: `OFF`, the set of `?off=` switches.
@@ -204,6 +250,8 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - State lives in `appStore`. One-shot animations go through `emitGame` and `onGame`. Per-frame values live in plain arrays or objects (`portalFx`, `cameraFx`) that GSAP tweens and shaders read, so React never re-renders per frame.
 - Particle systems and effects are always mounted, idle and culled in the shader, so every program compiles behind the loading veil.
 - `store.mode` (never saved) and `store.freeLock` (`locked`, `pending`, `released` or `refused`) gate Free Roam input. The pause menu shows whenever the mode is free in the hall without the lock.
-- `store.journey` (`hall → entering → warp → dimension → returning → hall`) gates all input. It is never saved. The 3D frame pauses during `warp` and `dimension` while GSAP keeps running.
+- `store.journey` (`hall → entering → warp → dimension → returning → hall`, or with a 3D world `warp → world → leaving → returning`) gates all input. It is never saved.
+  - The hall's 3D frame pauses during `warp`, `dimension`, `world` and `leaving` while GSAP keeps running. The hall's driver keeps ticking GSAP for the worlds too.
+  - Each canvas advances only its own R3F root: `advance(t, …, get())`. `advance` with no state would tick every root.
 - `PIRATES_PASSIVE` (`config/pirates.ts`, currently `true`): pirates never attack or turn hostile anywhere. All gameplay must ask `hostileAllowed()` before hostile behaviour. Only showcase buttons pass `manual = true`, which plays the hostile and attack animations regardless.
 - Portal ids run bay by bay from the entrance, left (−x) then right (+x). So 0 is bay 0 left, 1 is bay 0 right, and so on.

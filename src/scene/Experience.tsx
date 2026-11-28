@@ -8,7 +8,7 @@ import { FreeRig } from '../controls/FreeRig'
 import { BASE_FOV, GlideRig } from '../controls/GlideRig'
 import { Interaction } from '../controls/Interaction'
 import { OFF } from '../lib/debug'
-import { appStore, useApp } from '../state/store'
+import { appStore, useApp, type Quality } from '../state/store'
 import { hall } from '../world/layout'
 import { Atmosphere } from './Atmosphere'
 import { Corridor } from './Corridor'
@@ -37,12 +37,16 @@ const DPR_CAP = { high: 1.5, low: 1.0 } as const
 /** ?dpr=N (measurement knob): renders at exactly this pixel ratio, ignoring the cap. */
 const DPR_OVERRIDE = Number(new URLSearchParams(window.location.search).get('dpr')) || 0
 
+/** The canvas pixel ratio for a quality tier (the hall's and every 3D world's). */
+export const canvasDpr = (quality: Quality) => (DPR_OVERRIDE > 0 ? DPR_OVERRIDE : Math.min(window.devicePixelRatio || 1, DPR_CAP[quality]))
+
 /** The whole 3D scene. memo(): HUD state changes never re-render the Canvas. */
 export const Experience = memo(function Experience() {
   const quality = useApp((s) => s.quality)
-  const dpr = DPR_OVERRIDE > 0 ? DPR_OVERRIDE : Math.min(window.devicePixelRatio || 1, DPR_CAP[quality])
+  const dpr = canvasDpr(quality)
   return (
     <Canvas
+      id="hall"
       className="!fixed inset-0"
       dpr={dpr}
       frameloop="never"
@@ -88,10 +92,12 @@ const WARM_FRAMES = 20
 /**
  * The single frame loop (as in the Breaking Bad project): GSAP and R3F advance from the same
  * vsync-aligned rAF timestamp, so camera motion never micro-stutters against tweens.
- * While the warp / dimension screens cover the canvas, the 3D view stops rendering (GSAP keeps
- * running for the screens); it resumes the moment the journey turns back towards the hall.
+ * While the warp / dimension screens or a 3D world cover the canvas, the 3D view stops rendering
+ * (GSAP keeps running for the screens and the world); it resumes the moment the journey turns back
+ * towards the hall. It advances this canvas's root only: a 3D world's canvas has a driver of its own.
  */
 function FrameDriver() {
+  const get = useThree((s) => s.get)
   useEffect(() => {
     gsap.ticker.remove(gsap.updateRoot)
     let raf = 0
@@ -107,17 +113,18 @@ function FrameDriver() {
       gsap.updateRoot(gsapTime)
       const st = appStore.get()
       if (st.sceneReady && readyFrames < WARM_FRAMES) readyFrames++
-      const covered = st.journey === 'warp' || st.journey === 'dimension'
+      const j = st.journey
+      const covered = j === 'warp' || j === 'dimension' || j === 'world' || j === 'leaving'
       if (covered && readyFrames >= WARM_FRAMES) return
       sceneTime += dt
-      advance(sceneTime)
+      advance(sceneTime, true, get())
     }
     raf = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(raf)
       gsap.ticker.add(gsap.updateRoot)
     }
-  }, [])
+  }, [get])
   return null
 }
 

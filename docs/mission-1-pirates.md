@@ -4,7 +4,11 @@ Portal 0's dimension (the blue portal, bay 0 left, "DIMENSION I"). Today it is a
 
 Everything is original and procedural: no official Minecraft or Mojang textures, sounds, mobs or UI strings, and no film-franchise imagery.
 
-**Status (2026-11-28):** only the pirate characters exist so far, in a showcase viewer (`?showcase=pirates`). The ship, the gameplay, combat and trading are **not built yet**. The mission needs Free Roam (Phase 3) first.
+**Status (2026-11-28):**
+- The pirate characters exist in a showcase viewer (`?showcase=pirates`).
+- Free Roam (Phase 3) is done.
+- The ship world, build stage 1: entering through portal 0 loads a real 3D world (the warp screen is its loading screen). It has the open sea, a bright tropical sky, the island, a temporary flat deck and the blue deck portal.
+- The real ship, the pirates on board, gameplay, combat and trading are **not built yet**.
 
 ---
 
@@ -19,6 +23,24 @@ An original voxel pirate ship on open sea. It has five areas:
 | Crow's nest | At the top of the mast. |
 | Hold | Below the main deck: cargo and supplies. |
 | Brig | In the lower deck, where Natalie is held. |
+
+**Sky:** a bright tropical day (chosen 2026-11-28). No sunset option.
+
+**The island:** a voxel island about 220 m from the ship, clearly visible from the deck. It matters for the story (see "Getting home").
+
+## Arriving and getting home (story change, 2026-11-28)
+
+- **Arrival:** the player arrives on the main deck through a **blue deck portal**. It is **arrival only**: it does not lead back.
+- **Getting home:**
+  1. The player sails to the nearby island.
+  2. On the island is a **dilapidated portal** (ruined, with a broken frame).
+  3. The player lights it with a **flint and steel given by a mermaid**.
+  4. Jumping in returns the player to **portal 0's mat in the hall, in Free Roam**.
+- **Not built yet.** For now, during development:
+  - the deck portal is still a working exit (jump in);
+  - the pause menu has "Return to Corridor" (later behind a dev flag).
+
+  Both switch off once the island exit exists.
 
 ## The crew
 
@@ -82,6 +104,11 @@ The config flag `PIRATES_PASSIVE = true` lives in `src/config/pirates.ts`.
 
 These are still open, so don't invent answers. Ask the user.
 
+- **The mermaid:** who she is (Natalie, or a new character).
+- **The flint and steel vs. the pearl:** whether the mermaid's flint and steel replaces the pearl reward.
+- **Sailing:** how the player gets to the island (steering the ship from the helm, or a rowboat).
+- **The ship's name** on the stern board (proposed, waiting for approval).
+
 - **Respawn rules:** what happens when the player dies, whether hostility is reset, and where you respawn.
 - **Trade prices:** the emerald cost of each of the 6 trades, and how many emeralds the player starts with or can find.
 - **The player's starting weapon.**
@@ -91,9 +118,13 @@ These are still open, so don't invent answers. Ask the user.
 ## Build stages (proposed)
 
 1. ✅ **Pirate characters:** a showcase viewer with the rig, skins, accessories and 7 animations.
-2. Free Roam (Phase 3 of the hall). It is a prerequisite.
-3. The ship world: hull, deck, cabin, crow's nest, hold and brig, plus sea and sky.
-4. Pirates placed at their posts: idle, walk paths, look-at.
-5. The emerald off-hand slot and trading UI.
-6. Player health, combat, hostility rules (behind `PIRATES_PASSIVE`), and death.
-7. Natalie, the rescue and the pearl reward; the hall armour stand and chest.
+2. ✅ Free Roam (Phase 3 of the hall). It is a prerequisite.
+3. The ship world, in four build stages:
+   1. ✅ The world's plumbing: its own lazy chunk, the warp screen as its loader, sea, tropical sky, the island, a temporary flat deck, and the deck portal (arrival, plus the dev exit).
+   2. The voxel ship: hull, decks, captain's cabin, crow's nest, hold, the galley and the brig (Natalie's cell present but empty), sails and rigging, lanterns, sway.
+   3. Traversal: the ship's collision, stairs between decks, ladder climbing up the mast.
+   4. The 6 pirates at their posts, passive: idle, short patrols, look-at, collision with the player.
+4. The emerald off-hand slot and trading UI.
+5. Player health, combat, hostility rules (behind `PIRATES_PASSIVE`), and death.
+6. Natalie, the rescue and the pearl reward; the hall armour stand and chest.
+7. The way home: sailing to the island, the mermaid, the ruined portal (see "Arriving and getting home").

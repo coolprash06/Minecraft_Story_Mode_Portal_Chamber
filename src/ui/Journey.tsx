@@ -3,22 +3,36 @@
  *  • Veil: a flat colour over the canvas. Normally the whiteout colour, so the 3D whiteout hands
  *    over to it seamlessly; with reduced motion it is a dark tint of the portal colour and simply
  *    fades in and out.
- *  • WarpScreen (~2.4 s): square motes stream out of the centre in the portal's tones while the
- *    whiteout settles to a deep tint, with original status lines and a chunky progress bar.
- *  • DimensionScreen: the placeholder for the world behind the portal (config/dimensions.ts), with
+ *  • WarpScreen, outbound (≥ 2.4 s): square motes stream out of the centre in the portal's tones
+ *    while the whiteout settles to a deep tint, with original status lines and a chunky progress
+ *    bar. For a portal with a 3D world it is also the loading screen: the bar follows the world's
+ *    real progress (state/world) and the screen holds, naming the stage, until the world is ready.
+ *  • WarpScreen, home (≥ 1.6 s, leaving a 3D world): the same tunnel, brightening back into the
+ *    whiteout at the end, so the hall's own whiteout takes over seamlessly.
+ *  • DimensionScreen: the placeholder for a world not built yet (config/dimensions.ts), with
  *    "Return to Corridor" (Esc also returns).
+ * With reduced motion the tunnel barely moves and nothing flashes.
  */
 import { useEffect, useRef, useState } from 'react'
-import { dimensionFor } from '../config/dimensions'
+import { dimensionFor, worldFor } from '../config/dimensions'
 import { flashColorFor } from '../controls/EntryRig'
-import { darken, drawSea, hexToRgb, tonesOf, WarpTunnel } from '../gfx/dimensionArt'
+import { freeInput } from '../controls/FreeRig'
+import { darken, drawSea, tonesOf, WarpTunnel } from '../gfx/dimensionArt'
+import { warpPainter, type WarpParams } from '../gfx/warpPaint'
 import { REDUCED_MOTION } from '../lib/device'
-import { arriveInDimension, returnToCorridor } from '../state/game'
-import { useApp } from '../state/store'
+import { arriveInDimension, arriveInWorld, homeFromWorld, returnToCorridor } from '../state/game'
+import { appStore, useApp } from '../state/store'
+import { worldLoad } from '../state/world'
 import { textColor } from './Hotbar'
 
 const WARP_TIME = 2.4
+const HOME_TIME = 1.6
 const WARP_LINES = ['Folding the corridor…', 'Following the current…', 'The far side opens…']
+const HOME_LINES = ['Riding the current home…', 'The corridor unfolds…']
+/** Fade-out of the warp screen (ms), over the dimension screen, the 3D world or the hall. */
+const WARP_FADE = 700
+
+type WarpDir = 'out' | 'home'
 
 export function Journey() {
   const journey = useApp((s) => s.journey)
@@ -30,11 +44,13 @@ export function Journey() {
   if (portal >= 0) last.current = portal
   const id = last.current
 
-  const [showWarp, setShowWarp] = useState(false)
+  const warpOn = journey === 'warp' || journey === 'leaving'
+  const [warp, setWarp] = useState<WarpDir | null>(warpOn ? (journey === 'leaving' ? 'home' : 'out') : null)
   useEffect(() => {
-    if (journey === 'warp') return setShowWarp(true)
-    // linger under the dimension screen while it fades in
-    const t = setTimeout(() => setShowWarp(false), 900)
+    if (journey === 'warp') return setWarp('out')
+    if (journey === 'leaving') return setWarp('home')
+    // linger (fading out) over whatever comes next
+    const t = setTimeout(() => setWarp(null), WARP_FADE + 100)
     return () => clearTimeout(t)
   }, [journey])
 
@@ -56,7 +72,7 @@ export function Journey() {
         className={`fixed inset-0 z-50 ${veil ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0'}`}
         style={{ background: veilColor, transition: `opacity ${veilMs}ms ease` }}
       />
-      {showWarp && <WarpScreen portalId={id} />}
+      {warp && <WarpScreen key={warp} portalId={id} dir={warp} visible={warpOn} />}
       {dimMounted && <DimensionScreen portalId={id} visible={dimVisible} />}
     </>
   )
@@ -64,66 +80,108 @@ export function Journey() {
 
 /* ───────────────────────────── warp screen ───────────────────────────── */
 
-function WarpScreen({ portalId }: { portalId: number }) {
-  const canvas = useRef<HTMLCanvasElement>(null)
-  const [line, setLine] = useState(0)
+function WarpScreen({ portalId, dir, visible }: { portalId: number; dir: WarpDir; visible: boolean }) {
+  const holder = useRef<HTMLDivElement>(null)
+  const [line, setLine] = useState('')
   const [progress, setProgress] = useState(0)
   const color = dimensionFor(portalId).color
+  const world = worldFor(portalId) !== null
 
   useEffect(() => {
-    const c = canvas.current
-    const ctx = c?.getContext('2d')
-    if (!c || !ctx) return
+    const el = holder.current
+    if (!el) return
+    // a fresh canvas per run (a canvas hands its control to a worker only once)
+    const c = document.createElement('canvas')
+    c.className = 'absolute inset-0 h-full w-full'
+    c.style.imageRendering = 'pixelated'
+    el.appendChild(c)
     const w = 240
     const h = Math.max(100, Math.round((w * window.innerHeight) / window.innerWidth))
-    c.width = w
-    c.height = h
-    const tunnel = new WarpTunnel(420)
-    const tones = tonesOf(color)
-    // whiteout → the saturated portal colour → a deep tint (never through grey)
-    const from = hexToRgb(flashColorFor(portalId))
-    const mid = hexToRgb(color).map((v) => v * 0.55) as [number, number, number]
-    const to = hexToRgb(color).map((v) => v * 0.1) as [number, number, number]
-    const lerp = (a: number[], b: number[], k: number) => a.map((v, i) => Math.round(v + (b[i] - v) * k)).join(',')
+    const params: WarpParams = { w, h, dir, color, flash: flashColorFor(portalId), reduced: REDUCED_MOTION, homeTime: HOME_TIME }
+    // the tunnel runs in a worker where possible, so loading stalls on this thread never freeze it
+    let worker: Worker | null = null
+    let paint: ((ctx: CanvasRenderingContext2D, t: number, dt: number) => void) | null = null
+    let ctx: CanvasRenderingContext2D | null = null
+    try {
+      if (typeof c.transferControlToOffscreen !== 'function') throw new Error('no OffscreenCanvas')
+      const off = c.transferControlToOffscreen()
+      off.width = w
+      off.height = h
+      worker = new Worker(new URL('./warpWorker.ts', import.meta.url), { type: 'module' })
+      worker.postMessage({ canvas: off, params }, [off])
+    } catch {
+      worker = null
+      c.width = w
+      c.height = h
+      ctx = c.getContext('2d')
+      paint = warpPainter(params)
+    }
+    const duration = dir === 'out' ? WARP_TIME : HOME_TIME
+    const lines = dir === 'out' ? WARP_LINES : HOME_LINES
     let raf = 0
     let start = -1
     let prev = 0
-    let arrived = false
+    let done = false
+    let shownLine = ''
+    let shownP = -1
     const frame = (ts: number) => {
       raf = requestAnimationFrame(frame)
       if (start < 0) start = prev = ts
       const t = (ts - start) / 1000
       const dt = Math.min(0.05, (ts - prev) / 1000)
       prev = ts
-      // the whiteout settles into a deep tint as we rush through
-      const k1 = Math.min(1, t / 0.22)
-      const k2 = Math.min(1, Math.max(0, (t - 0.22) / 0.6))
-      const bg = `rgb(${k2 > 0 ? lerp(mid, to, 1 - (1 - k2) * (1 - k2)) : lerp(from, mid, k1 * k1)})`
-      const speed = 3.4 - 2.0 * Math.min(1, t / 0.9)
-      tunnel.step(ctx, w, h, dt, speed, bg, tones, 0.3)
-      // a soft glow at the vanishing point
-      const g = ctx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, h * 0.45)
-      g.addColorStop(0, tones[2].replace(/,1\)$/, ',0.35)'))
-      g.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = g
-      ctx.fillRect(0, 0, w, h)
-      setLine(Math.min(WARP_LINES.length - 1, Math.floor(t / (WARP_TIME / WARP_LINES.length))))
-      setProgress(Math.min(1, Math.floor((t / WARP_TIME) * 20) / 20))
-      if (!arrived && t >= WARP_TIME) {
-        arrived = true
+      if (paint && ctx) paint(ctx, t, dt)
+
+      // status line and bar: time-based; for a world, also held back by its real loading progress
+      const timeK = Math.min(1, t / duration)
+      let p = timeK
+      let text = lines[Math.min(lines.length - 1, Math.floor(timeK * lines.length - 1e-6))]
+      let ready = true
+      if (dir === 'out' && world) {
+        p = Math.min(timeK, worldLoad.progress)
+        ready = worldLoad.ready
+        if (t >= duration && !ready && worldLoad.stage) text = worldLoad.stage
+      } else if (dir === 'home') {
+        ready = appStore.get().sceneReady
+        if (t >= duration && !ready) text = 'Lighting the hall…'
+      }
+      const q = Math.floor(p * 20) / 20
+      if (text !== shownLine) setLine((shownLine = text))
+      if (q !== shownP) setProgress((shownP = q))
+
+      if (done) return
+      if (dir === 'out' && world && worldLoad.failed) {
+        // the world couldn't load: fall back to the placeholder screen (it needs a cursor)
+        done = true
+        freeInput.unlock()
         arriveInDimension()
+      } else if (t >= duration && ready) {
+        done = true
+        if (dir === 'home') homeFromWorld()
+        else if (world) arriveInWorld()
+        else arriveInDimension()
       }
     }
     raf = requestAnimationFrame(frame)
-    return () => cancelAnimationFrame(raf)
-  }, [portalId, color])
+    return () => {
+      cancelAnimationFrame(raf)
+      worker?.postMessage('stop')
+      worker?.terminate()
+      c.remove()
+    }
+  }, [portalId, color, dir, world])
 
   return (
-    <div className="fixed inset-0 z-50 select-none" role="status" aria-live="polite">
-      <canvas ref={canvas} className="absolute inset-0 h-full w-full" style={{ imageRendering: 'pixelated' }} />
+    <div
+      className="fixed inset-0 z-50 select-none"
+      role="status"
+      aria-live="polite"
+      style={{ opacity: visible ? 1 : 0, transition: visible ? undefined : `opacity ${WARP_FADE}ms ease`, pointerEvents: visible ? 'auto' : 'none' }}
+    >
+      <div ref={holder} className="absolute inset-0" />
       <div className="absolute inset-x-0 bottom-[18%] flex flex-col items-center gap-4 px-4">
         <p className="font-term text-2xl tracking-wider text-[#e9edff] sm:text-3xl" style={{ textShadow: '2px 2px 0 #000' }}>
-          {WARP_LINES[line]}
+          {line}
         </p>
         <div className="h-3 w-[min(70vw,360px)] border-[3px] border-[#06060b] bg-[#06060b]/70" style={{ boxShadow: `0 0 0 2px ${color}55` }}>
           <div className="h-full" style={{ width: `${progress * 100}%`, background: `linear-gradient(${textColor(color)} 0 35%, ${color} 35% 70%, ${darken(color, 0.35)} 70%)` }} />

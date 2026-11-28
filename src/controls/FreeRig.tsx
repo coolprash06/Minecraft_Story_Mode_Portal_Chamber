@@ -8,6 +8,8 @@
  *    GlideRig at the nearest rail point (its own hand-back blend).
  *  • Pointer lock: taken on entering (inside the gesture), released by us on leaving / entering a
  *    portal. When the browser releases it (Esc), store.freeLock = 'released' and the pause menu shows.
+ *    A portal with a 3D world keeps the lock through the warp: the world (Mission 1's ship) reads
+ *    this same `freeInput`, so you arrive already playing, and come home still locked.
  *  • Left-click or E interacts with what the crosshair targets (Interaction does the picking);
  *    lit portals only open by jumping into them (the hall world's triggers call enterPortal 'free').
  *  • Footsteps / jump / landing go to the sfx hooks with the surface underfoot.
@@ -21,6 +23,7 @@ import { useEffect, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { Quaternion, Vector3, type PerspectiveCamera } from 'three'
 import { playSfx } from '../audio/sfx'
+import { worldFor } from '../config/dimensions'
 import { cameraFx, portalFx } from '../gfx/portalFx'
 import { REDUCED_MOTION } from '../lib/device'
 import { clamp } from '../lib/random'
@@ -109,7 +112,8 @@ export function FreeRig() {
     freeInput.attach(el)
     freeInput.simulate = params.has('nolock')
     const lock = () => {
-      if (appStore.get().mode !== 'free') return
+      const a = appStore.get()
+      if (a.mode !== 'free' && a.journey !== 'world') return
       if (freeInput.locked) return appStore.set({ freeLock: 'locked' })
       appStore.set({ freeLock: 'pending' })
       void freeInput.lock().then((ok) => {
@@ -117,7 +121,8 @@ export function FreeRig() {
       })
     }
     const offChange = freeInput.onChange((locked) => {
-      if (locked && appStore.get().mode !== 'free') return freeInput.unlock()
+      // a stray lock in Glide (in the hall) is dropped; a 3D world locks whatever the hall's mode
+      if (locked && appStore.get().mode !== 'free' && appStore.get().journey === 'hall') return freeInput.unlock()
       appStore.set({ freeLock: locked ? 'locked' : 'released' })
     })
     const offError = freeInput.onError(() => {
@@ -146,11 +151,11 @@ export function FreeRig() {
       if (freeInput.locked) appStore.set({ freeLock: 'locked' })
     }
 
-    // entering a portal releases the mouse (the dimension screen needs a cursor)
+    // entering a portal releases the mouse (the dimension screen needs a cursor); a 3D world keeps it
     let lastJourney = appStore.get().journey
     const offStore = appStore.subscribe(() => {
       const j = appStore.get().journey
-      if (j !== lastJourney && j === 'entering') freeInput.unlock()
+      if (j !== lastJourney && j === 'entering' && !worldFor(appStore.get().journeyPortal)) freeInput.unlock()
       lastJourney = j
     })
 

@@ -97,7 +97,7 @@ export function PauseMenu() {
   )
 }
 
-function MenuButton({ children, onClick, autoFocus }: { children: React.ReactNode; onClick: () => void; autoFocus?: boolean }) {
+export function MenuButton({ children, onClick, autoFocus }: { children: React.ReactNode; onClick: () => void; autoFocus?: boolean }) {
   return (
     <button
       type="button"
