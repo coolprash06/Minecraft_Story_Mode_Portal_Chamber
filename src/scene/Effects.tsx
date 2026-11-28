@@ -178,8 +178,8 @@ export function Effects() {
       <primitive object={grade} dispose={null} />
       <Vignette offset={0.28} darkness={0.72} />
       <primitive object={tint} dispose={null} />
-      {high ? <SMAA /> : <></>}
-      <Noise blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.04} />
+      {high && !OFF.has('smaa') ? <SMAA /> : <></>}
+      {OFF.has('grain') ? <></> : <Noise blendFunction={BlendFunction.SOFT_LIGHT} opacity={0.04} />}
     </EffectComposer>
   )
 }

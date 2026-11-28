@@ -1,7 +1,7 @@
 /**
  * ?off=a,b,c (debug knobs for performance measurement; nothing here is meant for players).
  *  post, shadows: the post stack / the shadow pool (read in Effects / Lighting)
- *  bloom: the bloom effect only
+ *  bloom, smaa, grain: single post effects
  *  surfaces, motes: the portal surfaces / the portal motes
  *  portallight: every portal's light contribution (field + pool), surfaces still shown
  *  poolportals: the shadow pool never picks a portal light (they stay field-only)

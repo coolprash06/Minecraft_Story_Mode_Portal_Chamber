@@ -35,6 +35,13 @@ export function Hud() {
 
 const params = new URLSearchParams(window.location.search)
 
+/** The pixel ratio the canvas actually renders at (backing store ÷ CSS size) and its size. */
+function renderRes() {
+  const c = document.querySelector('canvas')
+  if (!c || !c.clientWidth) return 'render ?'
+  return `render ${c.width}×${c.height} @${(c.width / c.clientWidth).toFixed(2)} (dpr ${window.devicePixelRatio})`
+}
+
 function gpuName() {
   const gl = document.querySelector('canvas')?.getContext('webgl2')
   const ext = gl?.getExtension('WEBGL_debug_renderer_info')
@@ -76,7 +83,7 @@ function Perf() {
         const avg = f.reduce((a, b) => a + b, 0) / f.length
         const q = (x: number) => f[Math.min(f.length - 1, Math.floor(f.length * x))].toFixed(1)
         const slow = f.filter((d) => d > 33.4).length
-        const result = `BENCH ${gpuSummary(gpuStats.samples)} · ${(1000 / avg).toFixed(1)} fps avg · median ${q(0.5)} / p90 ${q(0.9)} / p99 ${q(0.99)} ms · ${slow} frames >33ms of ${f.length} · ${window.innerWidth}×${window.innerHeight}@${window.devicePixelRatio} · ${gpuName()}`
+        const result = `BENCH ${gpuSummary(gpuStats.samples)} · ${(1000 / avg).toFixed(1)} fps avg · median ${q(0.5)} / p90 ${q(0.9)} / p99 ${q(0.99)} ms · ${slow} frames >33ms of ${f.length} · ${window.innerWidth}×${window.innerHeight} · ${renderRes()} · ${gpuName()}`
         frames.current = []
         document.title = result
         setText(result)
@@ -84,7 +91,7 @@ function Perf() {
         if (!debug) return
       }
       if (debug && t - windowStart >= 500) {
-        const fps = `${Math.round((count * 1000) / (t - windowStart))} fps · ${((t - windowStart) / count).toFixed(1)} ms · ${gpuSummary(gpuStats.samples.slice(-30))}`
+        const fps = `${Math.round((count * 1000) / (t - windowStart))} fps · ${((t - windowStart) / count).toFixed(1)} ms · ${gpuSummary(gpuStats.samples.slice(-30))} · ${renderRes()}`
         setText((prev) => (prev.startsWith('BENCH') ? prev : fps))
         count = 0
         windowStart = t

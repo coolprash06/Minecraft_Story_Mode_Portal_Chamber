@@ -12,7 +12,7 @@ import { hall } from '../world/layout'
 import { Atmosphere } from './Atmosphere'
 import { Corridor } from './Corridor'
 import { Banners, Carpet, Runners } from './Decor'
-import { Effects, NO_POST } from './Effects'
+import { Effects } from './Effects'
 import { Finale } from './Finale'
 import { Flames } from './Flames'
 import { GPU_TIMING, GpuTimer } from './GpuTimer'
@@ -29,11 +29,13 @@ const SHADOW_TYPE = (new URLSearchParams(window.location.search).get('shadowtype
 
 /** Pixel-ratio ceiling per quality tier (fixed for the session). */
 const DPR_CAP = { high: 1.5, low: 1.0 } as const
+/** ?dpr=N (measurement knob): renders at exactly this pixel ratio, ignoring the cap. */
+const DPR_OVERRIDE = Number(new URLSearchParams(window.location.search).get('dpr')) || 0
 
 /** The whole 3D scene. memo(): HUD state changes never re-render the Canvas. */
 export const Experience = memo(function Experience() {
   const quality = useApp((s) => s.quality)
-  const dpr = Math.min(window.devicePixelRatio || 1, DPR_CAP[quality])
+  const dpr = DPR_OVERRIDE > 0 ? DPR_OVERRIDE : Math.min(window.devicePixelRatio || 1, DPR_CAP[quality])
   return (
     <Canvas
       className="!fixed inset-0"
@@ -65,7 +67,7 @@ export const Experience = memo(function Experience() {
       {!OFF.has('flames') && <Flames />}
       {!OFF.has('dust') && <Atmosphere />}
       <Effects />
-      {GPU_TIMING && !NO_POST && <GpuTimer />}
+      {GPU_TIMING && <GpuTimer />}
       <ReadySignal />
     </Canvas>
   )

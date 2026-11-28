@@ -65,12 +65,13 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 
 | Flag | Effect |
 |---|---|
-| `?debug` | FPS, GPU timer, sfx console logs |
-| `?bench=N` | Glides the whole rail in N s, then puts `BENCH` stats in the tab title |
+| `?debug` | FPS, GPU timer, the render size and actual pixel ratio, sfx console logs |
+| `?bench=N` | Glides the whole rail in N s, then puts `BENCH` stats in the tab title. Add `&fixed` to hold the start pose (`?z`, `?yaw`, `?pitch`) with no sway, for A/B runs |
+| `?dpr=N` | Renders at exactly this pixel ratio, ignoring the quality cap (measurement only) |
 | `?lit=all` or `?lit=0,3` | Lights those portals (never saved) |
 | `?z=-30` `?yaw=180` `?pitch=10` | Start pose (degrees) |
 | `?quality=low\|high` | Overrides the device default |
-| `?off=a,b` | Measurement switches (see `lib/debug.ts`): `post`, `shadows`, `bloom`, `surfaces`, `motes`, `portallight`, `poolportals`, and the components `hanging`, `flames`, `dust`, `props`, `banners`, `carpet`, `runners`, `frames`, `finale`, `portalfx`, `held` |
+| `?off=a,b` | Measurement switches (see `lib/debug.ts`): `post`, `shadows`, `bloom`, `smaa`, `grain`, `surfaces`, `motes`, `portallight`, `poolportals`, and the components `hanging`, `flames`, `dust`, `props`, `banners`, `carpet`, `runners`, `frames`, `finale`, `portalfx`, `held` |
 | `?pool=N` | Overrides the shadow pool size |
 | `?shadowtype=basic\|percentage\|soft` | Shadow filter type |
 | `?reset` | Clears the saved session |

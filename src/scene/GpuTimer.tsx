@@ -5,6 +5,7 @@
  */
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
+import { NO_POST } from './Effects'
 
 export const gpuStats = { samples: [] as number[], supported: false }
 
@@ -13,6 +14,8 @@ export const GPU_TIMING = params.has('bench') || params.has('debug')
 
 export function GpuTimer() {
   const gl = useThree((s) => s.gl)
+  const scene = useThree((s) => s.scene)
+  const camera = useThree((s) => s.camera)
   const ctx = gl.getContext() as WebGL2RenderingContext
   const ext = useMemo(() => ctx.getExtension('EXT_disjoint_timer_query_webgl2') as { TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number } | null, [ctx])
   const pending = useMemo<WebGLQuery[]>(() => [], [])
@@ -29,6 +32,10 @@ export function GpuTimer() {
     ctx.beginQuery(ext.TIME_ELAPSED_EXT, q)
     current.q = q
   }, 0.9)
+  // ?off=post: no composer runs, and these priority callbacks stop R3F's own render, so draw here
+  useFrame(() => {
+    if (NO_POST) gl.render(scene, camera)
+  }, 1)
   // … and just after; then collect any finished results
   useFrame(() => {
     if (!ext) return

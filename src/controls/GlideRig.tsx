@@ -57,6 +57,8 @@ const startZ = clamp(atPortal ? atPortal.center[2] : num('z', zStart), zEnd, zSt
 const startYaw = atPortal ? faceYaw(atPortal.id) : (num('yaw', 0) * Math.PI) / 180
 const startPitch = clamp((num('pitch', 0) * Math.PI) / 180, -PITCH_LIMIT, PITCH_LIMIT)
 const benchSeconds = num('bench', 0)
+/** ?bench=N&fixed: the camera holds the start pose (no glide, sway or lean), so A/B runs see the same pixels. */
+const benchFixed = benchSeconds > 0 && params.has('fixed')
 
 /** True while a drag-look is in progress (so a click handler can ignore the release). */
 export const lookState = { dragging: false, moved: 0 }
@@ -197,6 +199,11 @@ export function GlideRig() {
     if (appStore.get().mode !== 'glide' || appStore.get().journey !== 'hall') return
     st.t += dt
 
+    if (benchFixed) {
+      camera.position.set(0, RAIL_Y, startZ)
+      camera.rotation.set(startPitch, startYaw, 0, 'YXZ')
+      return
+    }
     if (benchSeconds > 0 && appStore.get().sceneReady) {
       if (st.benchT < 0) st.benchT = 0
       st.benchT += dt

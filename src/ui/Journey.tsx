@@ -221,7 +221,7 @@ function DimensionScreen({ portalId, visible }: { portalId: number; visible: boo
           {dim.blurb}
         </p>
         <p className="mt-1 font-term text-lg text-[#c9cdf0]/75 sm:text-xl" style={{ textShadow: '2px 2px 0 #000' }}>
-          This dimension is still being built. Coming in Phase 6.
+          This dimension is still being built. Mission I — coming soon.
         </p>
       </div>
 
