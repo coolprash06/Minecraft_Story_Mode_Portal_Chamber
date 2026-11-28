@@ -43,15 +43,23 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - If its portal was lit, the portal deactivates: the surface drains top-down, there's smoke and a few dying sparks, and the screen dims softly. The glow, floor pool and mat border follow the light field.
   - Prompts and toasts: "Click to return X", "This isn't its frame", "Hold X to return it".
   - Data-driven from `FLINTS`. Saved to sessionStorage. Reduced motion: no flight, the surface fades out.
+- **Pirate showcase (Mission 1, stage 1):** `?showcase=pirates`. The 6 original pirates on a lit stage in the hall's style, one at a time.
+  - Rig: head, torso, 2 arms and 2 legs, built from voxels with procedurally painted pixel skins and voxel accessories. Every pirate holds a dagger in the right hand.
+  - It is data-driven: one `PIRATES` entry per pirate (name, role, post, build, palette, 8×8 face, hair, outfit, accessories, dagger).
+  - Seven procedural animations: idle, walk, trade, hostile, attack, hurt (red flash and knockback), and death (topple, pixel smoke, respawn).
+  - Controls: a slow turntable, drag to rotate, ←/→ or the arrows to switch pirate, and 1–7 or the buttons to animate.
+  - App lazy-loads it as its own chunk, so the hall never loads it.
 
 ## Remaining phases
 
+0. **Performance Step 0 (pending):** re-measure on AC power at the real pixel ratio, full `?off=` cost table, ranked optimisations. Don't change visuals until approved.
 3. **Free Roam:** F toggles it. WASD with pointer-lock 360° look, Shift to sprint, SPACE to jump, collision, a crosshair and an Esc pause menu.
 4. **Portal mechanic for the other 17 portals.** Add a `FLINTS` entry for each.
 5. **Sound:** synthesised WebAudio sounds plugged into `setSfxPlayer`, plus a mute toggle.
 6. **Warp and dimensions.**
-7. **Extras.**
-8. **Polish and a production build.**
+7. **Mission 1 – Pirates in the Caribbean (portal 0's dimension):** real 3D ship world, 6 pirates, emerald trading, hostility, combat, rescuing Natalie, pearl reward. Spec in `docs/mission-1-pirates.md`. Needs Free Roam (Phase 3) first.
+8. **Extras.**
+9. **Polish and a production build.**
 
 ## Debug URL flags
 
@@ -70,6 +78,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 | `?at=0` | Starts on the rail in front of portal 0, facing it, lit (never saved) |
 | `?dim=0` | Starts on portal 0's dimension screen. Return leads to the rail in front of it, lit |
 | `?motion=reduce\|full` | Forces reduced motion on or off |
+| `?showcase=pirates` | Opens the pirate showcase instead of the hall. Extras: `&pirate=1..6` or an id (`bess`), `&anim=<idle\|walk\|trade\|hostile\|attack\|hurt\|death>`, `&still` (no turntable), `&turn=<deg>` |
 
 ## Code map (`src/`)
 
@@ -77,6 +86,7 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `portals.ts`: colours and per-side order.
   - `items.ts`: `FLINTS`. An entry here enables a portal.
   - `dimensions.ts`: the name, numeral, blurb and backdrop of each portal's dimension.
+  - `pirates.ts`: Mission 1's crew (`PIRATES`, one entry per pirate), plus `PIRATES_PASSIVE` and `hostileAllowed()`.
   - `theme.ts`: scene and UI colours, fog.
 - `world/`
   - `layout.ts`: `buildHall()`, the deterministic voxel grid plus portals, torches, lanterns, decor and the rail. Also the bay geometry notes.
@@ -99,6 +109,13 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - `Lighting`: the shadow pool and the light-field update.
   - `Effects`: the post stack. The warp distortion has its own `EffectPass`, enabled only while active. The warp tint (pulse and whiteout) merges into the main pass.
   - `GpuTimer`: GPU timer queries.
+- `characters/`: the Mission 1 pirates. They are reusable, not tied to the showcase.
+  - `pirateModel.ts`: `buildPirate(def)`, which builds the voxel rig parts, skins, accessories and dagger, with pivots. There are 3 head variants (open, narrow and closed eyes).
+  - `pirateAnims.ts`: `PirateAnimator`, the procedural poses for the 7 animations, with blending and the hostile gate.
+  - `PirateRig.tsx`: the posed R3F rig, the hurt-flash materials and the death smoke puff.
+- `showcase/`
+  - `PirateShowcase.tsx`: the `?showcase=pirates` page (its Canvas, lights, turntable and pixel UI).
+  - `stage.ts`: the stage voxels (brick room, plinth, banners, torches).
 - `controls/`
   - `GlideRig.tsx`: the rail camera (exports `lookState`, and `glideControl.place` to hand control back with a blend).
   - `EntryRig.tsx`: the scripted portal-entry camera (walk, jump, cancel, return).
@@ -124,4 +141,5 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - State lives in `appStore`. One-shot animations go through `emitGame` and `onGame`. Per-frame values live in plain arrays or objects (`portalFx`, `cameraFx`) that GSAP tweens and shaders read, so React never re-renders per frame.
 - Particle systems and effects are always mounted, idle and culled in the shader, so every program compiles behind the loading veil.
 - `store.journey` (`hall → entering → warp → dimension → returning → hall`) gates all input. It is never saved. The 3D frame pauses during `warp` and `dimension` while GSAP keeps running.
+- `PIRATES_PASSIVE` (`config/pirates.ts`, currently `true`): pirates never attack or turn hostile anywhere. All gameplay must ask `hostileAllowed()` before hostile behaviour. Only showcase buttons pass `manual = true`, which plays the hostile and attack animations regardless.
 - Portal ids run bay by bay from the entrance, left (−x) then right (+x). So 0 is bay 0 left, 1 is bay 0 right, and so on.
