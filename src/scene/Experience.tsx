@@ -24,8 +24,12 @@ import { PortalFx } from './PortalFx'
 import { Portals } from './Portals'
 import { Props } from './Props'
 
-/** ?shadowtype=basic|percentage|soft (debug knob). */
-const SHADOW_TYPE = (new URLSearchParams(window.location.search).get('shadowtype') ?? 'percentage') as 'basic' | 'percentage' | 'soft'
+/**
+ * Shadow map type: Basic (a plain depth cube), filtered softly by our own 4-tap filter (gfx/shadowFilter):
+ * the hardware depth-compare path that PCF uses is the expensive part on the target iGPU.
+ * ?shadowtype=percentage restores three's PCF filter (the previous look; debug knob).
+ */
+const SHADOW_TYPE = (new URLSearchParams(window.location.search).get('shadowtype') ?? 'basic') as 'basic' | 'percentage' | 'soft'
 
 /** Pixel-ratio ceiling per quality tier (fixed for the session). */
 const DPR_CAP = { high: 1.5, low: 1.0 } as const

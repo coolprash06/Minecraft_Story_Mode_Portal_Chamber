@@ -31,6 +31,9 @@ import {
 } from './models'
 
 type V3 = [number, number, number]
+
+/** Props are meshed with merged coplanar faces (same pixels, ~half the triangles). ?propmesh=voxel: one quad per voxel face (A/B knob). */
+const MERGE = new URLSearchParams(window.location.search).get('propmesh') !== 'voxel'
 const UP = new Vector3(0, 1, 0)
 const Z = new Vector3(0, 0, 1)
 const ONE = new Vector3(1, 1, 1)
@@ -56,29 +59,29 @@ function buildStatic() {
   const fixtures = new StaticBatch()
 
   // torches: stick (leaning) + bracket on the wall
-  const stick = torchStick().mesh(TORCH_SCALE)
-  const bracket = torchBracket().mesh(TORCH_SCALE)
+  const stick = torchStick().mesh(TORCH_SCALE, undefined, MERGE)
+  const bracket = torchBracket().mesh(TORCH_SCALE, undefined, MERGE)
   for (const t of hall.torches) {
     fixtures.add(stick, mat(t.base, yawX(t.normal), torchLean()))
     fixtures.add(bracket, mat(t.base, yawX(t.normal)))
   }
 
   // armour stands (one model per finish, reused)
-  const stands = { iron: armourStand('iron').mesh(ARMOUR_SCALE), gold: armourStand('gold').mesh(ARMOUR_SCALE), diamond: armourStand('diamond').mesh(ARMOUR_SCALE) }
+  const stands = { iron: armourStand('iron').mesh(ARMOUR_SCALE, undefined, MERGE), gold: armourStand('gold').mesh(ARMOUR_SCALE, undefined, MERGE), diamond: armourStand('diamond').mesh(ARMOUR_SCALE, undefined, MERGE) }
   for (const a of hall.decor.armourStands) casters.add(stands[a.finish], mat(a.position, yawZ(a.normal)))
 
   // weapon sprites, centred on their middle (for crossing) and on their foot (for racks)
   const weapons = new Map<WeaponKind, { mid: MeshParts; foot: MeshParts; h: number }>()
   for (const k of ['sword', 'axe', 'spear', 'bow'] as WeaponKind[]) {
     const { set, h } = weapon(k)
-    weapons.set(k, { mid: set.mesh(ITEM_SCALE, [0, h / 2, 0.5]), foot: set.mesh(ITEM_SCALE, [0, 0, 0.5]), h })
+    weapons.set(k, { mid: set.mesh(ITEM_SCALE, [0, h / 2, 0.5], MERGE), foot: set.mesh(ITEM_SCALE, [0, 0, 0.5], MERGE), h })
   }
   const shields = new Map<number, MeshParts>()
   const shieldParts = (crest: number) => {
     let p = shields.get(crest)
     if (!p) {
       const s = shield(crest)
-      p = s.set.mesh(ITEM_SCALE * 1.1, [0, s.h / 2, 0])
+      p = s.set.mesh(ITEM_SCALE * 1.1, [0, s.h / 2, 0], MERGE)
       shields.set(crest, p)
     }
     return p
@@ -95,7 +98,7 @@ function buildStatic() {
   }
 
   // weapon racks
-  const frame = rackFrame().mesh(RACK_SCALE)
+  const frame = rackFrame().mesh(RACK_SCALE, undefined, MERGE)
   const order: WeaponKind[] = ['spear', 'sword', 'axe', 'sword', 'spear', 'axe', 'bow']
   for (const r of hall.decor.racks) {
     const base = mat(r.position, yawZ(r.normal))
@@ -109,7 +112,7 @@ function buildStatic() {
   }
 
   // banner rods (the cloth itself is animated, see Banners)
-  const rod = bannerRod().mesh(ITEM_SCALE * 0.75)
+  const rod = bannerRod().mesh(ITEM_SCALE * 0.75, undefined, MERGE)
   for (const b of hall.decor.banners) casters.add(rod, mat(b.position, yawZ(b.normal)))
 
   // standing lanterns
@@ -117,14 +120,14 @@ function buildStatic() {
   for (const l of hall.lanterns) {
     if (l.kind !== 'standing') continue
     const scale = l.scale ?? 1
-    if (!lanterns.has(scale)) lanterns.set(scale, lantern().mesh(LANTERN_SCALE * scale))
+    if (!lanterns.has(scale)) lanterns.set(scale, lantern().mesh(LANTERN_SCALE * scale, undefined, MERGE))
     fixtures.add(lanterns.get(scale)!, mat(l.position, 0))
   }
 
   // the Founding King's frame (origin: bottom centre of the outer edge, back on the wall)
   const pf = hall.decor.finale.portrait
   const frameBottom = pf.position[1] - (FRAME_OPENING.h / 2 + FRAME_OPENING.ring) * FRAME_SCALE
-  casters.add(portraitFrame().mesh(FRAME_SCALE), mat([pf.position[0], frameBottom, pf.position[2]], yawZ(pf.normal)))
+  casters.add(portraitFrame().mesh(FRAME_SCALE, undefined, MERGE), mat([pf.position[0], frameBottom, pf.position[2]], yawZ(pf.normal)))
 
   return { casters: casters.build(), fixtures: fixtures.build() }
 }

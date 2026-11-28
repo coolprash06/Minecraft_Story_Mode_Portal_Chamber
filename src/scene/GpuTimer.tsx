@@ -7,7 +7,7 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useMemo } from 'react'
 import { NO_POST } from './Effects'
 
-export const gpuStats = { samples: [] as number[], supported: false }
+export const gpuStats = { samples: [] as number[], supported: false, calls: 0, triangles: 0 }
 
 const params = new URLSearchParams(window.location.search)
 export const GPU_TIMING = params.has('bench') || params.has('debug')
@@ -24,8 +24,16 @@ export function GpuTimer() {
     gpuStats.supported = !!ext
   }, [ext])
 
+  // draw calls / triangles summed over the whole frame (shadow maps, scene and post passes)
+  useEffect(() => {
+    gl.info.autoReset = false
+    return () => {
+      gl.info.autoReset = true
+    }
+  }, [gl])
   // just before the composer renders (priority 1) …
   useFrame(() => {
+    gl.info.reset()
     if (!ext || current.q) return
     const q = ctx.createQuery()
     if (!q) return
@@ -38,6 +46,8 @@ export function GpuTimer() {
   }, 1)
   // … and just after; then collect any finished results
   useFrame(() => {
+    gpuStats.calls = gl.info.render.calls
+    gpuStats.triangles = gl.info.render.triangles
     if (!ext) return
     if (current.q) {
       ctx.endQuery(ext.TIME_ELAPSED_EXT)

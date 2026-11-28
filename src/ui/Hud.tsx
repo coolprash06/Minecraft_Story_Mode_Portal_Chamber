@@ -71,7 +71,7 @@ function Perf() {
     const gpuSummary = (g: number[]) => {
       if (!g.length) return 'GPU n/a'
       const s = [...g].sort((a, b) => a - b)
-      return `GPU median ${s[s.length >> 1].toFixed(2)} / p90 ${s[Math.floor(s.length * 0.9)].toFixed(2)} ms`
+      return `GPU median ${s[s.length >> 1].toFixed(2)} / p90 ${s[Math.floor(s.length * 0.9)].toFixed(2)} ms · ${gpuStats.calls} calls ${(gpuStats.triangles / 1000).toFixed(0)}k tris`
     }
     const tick = (t: number) => {
       const dt = t - last

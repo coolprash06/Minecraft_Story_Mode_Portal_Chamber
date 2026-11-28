@@ -9,6 +9,14 @@ const frameGlow: EmitFn = (x, y, z, axis) => {
   return id === undefined ? 0 : id + 1 + (axis !== 0 ? 0.5 : 0)
 }
 
+/**
+ * The walls, floor and ceiling draw after every other opaque mesh (props, carpet, banners, frames…),
+ * which all sit in front of them, so early-z skips the hidden wall/floor pixels instead of shading
+ * them first. Nothing is coplanar with the hall, so the image is identical.
+ * ?order=default (measurement knob): three's default order.
+ */
+const CORRIDOR_ORDER = new URLSearchParams(window.location.search).get('order') === 'default' ? 0 : 1
+
 /** The voxel hall: one merged, frustum-culled mesh per 16-block chunk, all sharing one material. */
 export function Corridor() {
   const chunks = useMemo(() => meshGrid(hall.grid, 16, frameGlow), [])
@@ -17,7 +25,7 @@ export function Corridor() {
   return (
     <group name="corridor">
       {chunks.map((c) => (
-        <mesh key={c.z0} geometry={c.geometry} material={material} receiveShadow castShadow />
+        <mesh key={c.z0} geometry={c.geometry} material={material} receiveShadow castShadow renderOrder={CORRIDOR_ORDER} />
       ))}
     </group>
   )

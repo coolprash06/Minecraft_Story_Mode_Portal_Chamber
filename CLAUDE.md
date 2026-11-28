@@ -15,6 +15,10 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - Quality (`high`/`low`) is decided once at startup and stays fixed for the session. Nothing may toggle shaders or lights mid-session.
 - All movement is camera-relative, in Glide and in Free Roam.
 - Measure performance with `?bench=N` (GPU timer queries), not headless FPS. Benchmark only on AC power: on battery the iGPU throttles to about 30 fps and the numbers are noise.
+  - The user's real setup is 2560×1600 at 150 % scaling, so DPR 1.5 and High renders at 1.5 (about 2561×1395 in a maximised Edge).
+  - The A/B pose is `?bench=5&fixed&z=-2&lit=all`. Alternate baseline and variant runs, 3+ pairs. Treat ±0.5 ms as noise.
+  - Absolute numbers drift ~1 ms with temperature over a long session, so only paired deltas count.
+- **Frame budget (High, ratio 1.5, bench pose):** ≤11 ms median and ≤14 ms p90 for the hall. Mission 1's scene needs the same, so new features must fit it.
 
 ## Done
 
@@ -49,10 +53,24 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
   - Seven procedural animations: idle, walk, trade, hostile, attack, hurt (red flash and knockback), and death (topple, pixel smoke, respawn).
   - Controls: a slow turntable, drag to rotate, ←/→ or the arrows to switch pirate, and 1–7 or the buttons to animate.
   - App lazy-loads it as its own chunk, so the hall never loads it.
+- **Performance Step 0 (2026-11-28).** Cost table at ratio 1.5, all lit, fixed pose, baseline 13.4 ms median / 16.1 ms p90:
+  - shadows 4.3–4.9 ms (of which PCF filtering 3.0, the second pool light 2.4);
+  - post 2.9 ms (SMAA 1.1, bloom 0.5, grain 0);
+  - props 1.5 ms;
+  - everything else ≤0.5 ms, which is noise;
+  - ratio 1.25 would save 3.0 ms.
+  - The old "10 → 13.4 ms drift" was not real: every commit from bfb2525 to 6b344f3 benches at 9.8 ± 0.1 ms under the old conditions. The high readings were throttled runs.
+- **Perf pass 1 (2026-11-28), no visible change.** About −2.6 ms paired at the bench pose: 14.2 → 11.2 ms median and 16.6 → 13.6 ms p90 in that (warm) session. Moving glide: 14.0 → 11.2 ms median and 17.3 → 14.3 ms p90.
+  - **Shadow filter** (`gfx/shadowFilter.ts`, about −0.7 ms). The hall now uses the Basic shadow map. A 4-tap soft filter (point-sampled compares on a rotated Vogel disk with the same radius) replaces Basic's hard tap. On the Arc, three's PCF hardware depth-compare path cost about 2.5 ms whatever the tap count. Same softness, with a slightly more dithered penumbra up close.
+  - **Draw order** (about −0.8 ms). The corridor (walls, floor, ceiling) draws after every other opaque mesh, so early-z skips the wall and floor pixels hidden behind props and carpet. Nothing is coplanar, so the image is identical.
+  - **Props mesh** (≈0 ms measured). Static props merge coplanar same-colour faces (208k → 100k triangles, identical pixels). It's kept because it costs nothing and shrinks shadow-map re-renders. Props were already merged per chunk (109 draw calls per frame in total), so instancing was not needed.
 
 ## Remaining phases
 
-0. **Performance Step 0 (pending):** re-measure on AC power at the real pixel ratio, full `?off=` cost table, ranked optimisations. Don't change visuals until approved.
+0. **Perf reserve (for Mission 1, not applied).** Use only if a later phase measures over budget, and ask first:
+   1. Render ratio 1.5 → 1.25 on High: about −3.0 ms. Slightly softer image on the 2560 panel.
+   2. Shadow pool 2 → 1 on High: about −2.4 ms with PCF, less now. Only the single most important light casts shadows.
+   - Smaller items: drop SMAA (−1.1 ms, jaggier edges) and cheaper bloom (about −0.3 ms).
 3. **Free Roam:** F toggles it. WASD with pointer-lock 360° look, Shift to sprint, SPACE to jump, collision, a crosshair and an Esc pause menu.
 4. **Portal mechanic for the other 17 portals.** Add a `FLINTS` entry for each.
 5. **Sound:** synthesised WebAudio sounds plugged into `setSfxPlayer`, plus a mute toggle.
@@ -73,7 +91,11 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 | `?quality=low\|high` | Overrides the device default |
 | `?off=a,b` | Measurement switches (see `lib/debug.ts`): `post`, `shadows`, `bloom`, `smaa`, `grain`, `surfaces`, `motes`, `portallight`, `poolportals`, and the components `hanging`, `flames`, `dust`, `props`, `banners`, `carpet`, `runners`, `frames`, `finale`, `portalfx`, `held` |
 | `?pool=N` | Overrides the shadow pool size |
-| `?shadowtype=basic\|percentage\|soft` | Shadow filter type |
+| `?shadowtype=basic\|percentage\|soft` | Shadow map type. The default is `basic` with the soft 4-tap filter. `percentage` is three's PCF (the look before perf pass 1) |
+| `?shadowfilter=three` | Basic's stock single hard tap (measurement only) |
+| `?shadowtaps=N` | Tap count of the soft filter, 1–8 (default 4) |
+| `?order=default` | three's default draw order (the corridor no longer draws last) |
+| `?propmesh=voxel` | One quad per voxel face for props (no face merging) |
 | `?reset` | Clears the saved session |
 | `?give=crimson` | Gives a dev-only flint (to test the mismatch path) |
 | `?at=0` | Starts on the rail in front of portal 0, facing it, lit (never saved) |
@@ -97,6 +119,8 @@ A 3D voxel portal corridor web page in an original, Minecraft-inspired style: a 
 - `gfx/`
   - `atlas.ts`, `tiles.ts`, `voxel.ts`, `pixelArt.ts`, `portrait.ts`, `flintArt.ts`: procedural textures and art.
   - `lightField.ts`: every light as a data texture plus a culling grid. It is injected into materials with `withLightField`.
+  - `shadowFilter.ts`: the soft 4-tap point-shadow filter, patched into three's shader chunk at startup (imported first in `main.tsx`).
+  - `voxel.ts`: the voxel model mesher. `mesh(scale, origin, merge)` can merge coplanar faces of the same colour.
   - `materials.ts`: shared materials.
   - `portalFx.ts`: per-portal fill, hover, flash and spiral arrays, `cameraFx` (shake, fov), `warpFx` (pulse, warp, flash) and `postFx` (bloom kick).
   - `dimensionArt.ts`: 2D pixel art for the dimension side (the sunset sea with a ship, the warp tunnel).
